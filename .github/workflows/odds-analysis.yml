@@ -1,0 +1,22 @@
+name: HKJC 賠率賽後分析
+on:
+  schedule:
+    - cron: '30 15 * * *'
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  analyse:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: '3.11' }
+      - name: 分析
+        run: python3 scripts/analyse_snapshots.py > data/analysis_report.txt 2>&1 || true
+      - name: 提交報告
+        run: |
+          git config user.name  "odds-bot"
+          git config user.email "odds-bot@users.noreply.github.com"
+          git add data/analysis_report.txt
+          git diff --staged --quiet || { git commit -m "analysis $(date -u +'%F')"; git push; }
