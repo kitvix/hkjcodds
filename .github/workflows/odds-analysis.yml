@@ -13,7 +13,11 @@ jobs:
       - uses: actions/setup-python@v5
         with: { python-version: '3.11' }
       - name: 分析
-        run: python3 scripts/analyse_snapshots.py > data/analysis_report.txt 2>&1 || true
+        run: |
+          mkdir -p data
+          python3 scripts/analyse_snapshots.py > data/analysis_report.txt 2>&1 || true
+          test -s data/analysis_report.txt || { echo "❌ 報告為空"; exit 1; }
+          head -20 data/analysis_report.txt
       - name: 提交報告
         run: |
           mkdir -p data
