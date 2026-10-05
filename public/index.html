@@ -1,0 +1,109 @@
+<!doctype html><html lang="zh-HK"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>HKJC 賠率走勢監察</title>
+<style>
+:root{--bg:#0b1220;--card:#121c30;--line:#243453;--txt:#e8eefc;--dim:#93a7c9;--up:#ff8f7a;--dn:#8ff0c8}
+*{box-sizing:border-box}body{margin:0;background:linear-gradient(180deg,#0b1220,#0d1728);color:var(--txt);
+font-family:"Noto Sans TC","PingFang HK",system-ui,sans-serif;padding:26px 18px}
+.wrap{max-width:1180px;margin:0 auto}
+h1{font-size:24px;margin:0 0 4px}.sub{color:var(--dim);font-size:13.5px;margin-bottom:18px}
+.panel{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:16px 18px;margin-bottom:16px}
+label{font-size:13px;color:var(--dim);display:block;margin-bottom:6px}
+input,button{background:#0e1830;border:1px solid var(--line);color:var(--txt);border-radius:9px;padding:9px 12px;font-size:14px;font-family:inherit}
+button{background:#1d3a63;cursor:pointer}button:hover{background:#26497a}
+.row{display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end}
+table{width:100%;border-collapse:collapse;font-size:13.5px}
+th,td{padding:7px 9px;border-bottom:1px solid #1c2a45;text-align:right}
+th:first-child,td:first-child{text-align:left}
+th{color:var(--dim);font-weight:600;font-size:12.5px}
+.up{color:var(--up)}.dn{color:var(--dn)}
+.badge{display:inline-block;padding:2px 9px;border-radius:20px;font-size:12px;background:#1a2b47;color:#bcd0f2;margin-right:6px}
+.ok{background:#12341f;color:#8ff0c8}.warn{background:#3a2a12;color:#ffd76a}
+.muted{color:var(--dim);font-size:12.5px}
+</style></head><body><div class="wrap">
+<h1>HKJC 賠率走勢監察</h1>
+<div class="sub">讀取雲端收集嘅賠率快照 · 落飛／退飛偵測 · 完整性檢查</div>
+
+<div class="panel">
+  <div class="row">
+    <div style="flex:1;min-width:260px">
+      <label>GitHub 快照來源（owner/repo）</label>
+      <input id="repo" style="width:100%" placeholder="例如 kit/hkjc-odds" value="">
+    </div>
+    <div><label>賽日</label><input id="date" placeholder="20261007" value=""></div>
+    <div><button onclick="loadRemote()">載入雲端快照</button></div>
+    <div><label>或本機檔案</label><input type="file" id="file" onchange="loadLocal(this)"></div>
+    <div><button onclick="loadDemo()">載入示範資料</button></div>
+  </div>
+  <div class="muted" style="margin-top:9px">資料來源：<code>data/odds_snapshots/&lt;賽日&gt;.jsonl</code>（由 GitHub Actions 每 5 分鐘自動提交）</div>
+</div>
+
+<div id="status" class="panel" style="display:none"></div>
+<div id="summary" class="panel" style="display:none"></div>
+<div id="moves" class="panel" style="display:none"></div>
+<div id="races" class="panel" style="display:none"></div>
+
+<script>
+let SNAPS=[];
+function parseJSONL(txt){return txt.trim().split('\n').map(l=>{try{return JSON.parse(l)}catch(e){return null}}).filter(Boolean)}
+async function loadDemo(){
+  try{const r=await fetch('sample.jsonl'); render(parseJSONL(await r.text()),'示範資料（模擬快照）')}
+  catch(e){alert('載入示範失敗')}
+}
+async function loadRemote(){
+  const repo=document.getElementById('repo').value.trim();
+  const date=document.getElementById('date').value.trim();
+  if(!repo||!date) return alert('請填寫 repo 同賽日');
+  const urls=[`https://raw.githubusercontent.com/${repo}/main/data/odds_snapshots/${date}.jsonl`,
+              `https://raw.githubusercontent.com/${repo}/master/data/odds_snapshots/${date}.jsonl`];
+  for(const u of urls){
+    try{const r=await fetch(u); if(r.ok){render(parseJSONL(await r.text()),u); return}}catch(e){}
+  }
+  alert('載入失敗（repo 私密／分支唔係 main／賽日未有資料）');
+}
+function loadLocal(inp){
+  const f=inp.files[0]; if(!f) return;
+  const rd=new FileReader(); rd.onload=()=>render(parseJSONL(rd.result),f.name); rd.readAsText(f,'utf-8');
+}
+function fmt(v){return v==null?'—':v.toFixed(1)}
+function render(snaps,src){
+  SNAPS=snaps;
+  const st=document.getElementById('status'); st.style.display='block';
+  if(!snaps.length){st.innerHTML='<b>冇快照資料</b>';return}
+  const first=snaps[0], last=snaps[snaps.length-1];
+  const toMin=h=>Math.floor(+h/100)*60+(+h%100);
+  const gaps=[];
+  for(let i=1;i<snaps.length;i++){const d=toMin(snaps[i].hhmm)-toMin(snaps[i-1].hhmm); if(d>8) gaps.push(`${snaps[i-1].hhmm}→${snaps[i].hhmm}（${d}分）`)}
+  st.innerHTML=`<span class="badge">快照 ${snaps.length} 張</span>
+    <span class="badge">${first.hhmm} → ${last.hhmm}</span>
+    <span class="badge">賽日 ${first.date||'—'} ${first.venue||''}</span>
+    <span class="badge ${gaps.length?'warn':'ok'}">${gaps.length?'⚠️ 缺漏：'+gaps.join('、'):'✅ 無明顯缺漏'}</span>
+    <div class="muted" style="margin-top:8px">來源：${src}</div>`;
+  const sum=document.getElementById('summary'); sum.style.display='block';
+  const rows=[];
+  for(const k in first.odds){const a=first.odds[k], b=last.odds[k]; if(a&&b) rows.push({k,a,b,r:b/a})}
+  const buckets=[['大幅落飛 ≥30%',r=>r<=0.70],['落飛 15-30%',r=>r>0.70&&r<=0.85],['平穩',r=>r>0.85&&r<=1.15],
+                 ['退飛 15-40%',r=>r>1.15&&r<=1.40],['大幅退飛 >40%',r=>r>1.40]];
+  sum.innerHTML=`<b>走勢分組（${first.hhmm} → ${last.hhmm}）</b><table><tr><th>類別</th><th>匹數</th><th>平均變幅</th></tr>`+
+    buckets.map(([lab,fn])=>{const s=rows.filter(x=>fn(x.r)); if(!s.length) return '';
+      const avg=100*(s.reduce((t,x)=>t+x.r,0)/s.length-1);
+      return `<tr><td>${lab}</td><td>${s.length}</td><td class="${avg<0?'dn':'up'}">${avg>0?'+':''}${avg.toFixed(1)}%</td></tr>`}).join('')+'</table>';
+  const mv=document.getElementById('moves'); mv.style.display='block';
+  const sorted=[...rows].sort((x,y)=>x.r-y.r);
+  const seenM=new Set(); const show=[];
+  [...sorted.slice(0,10),...sorted.slice(-10).reverse()].forEach(x=>{if(!seenM.has(x.k)){seenM.add(x.k);show.push(x)}});
+  mv.innerHTML=`<b>最大變動（落飛 ↑ / 退飛 ↓）</b><table><tr><th>場次</th><th>馬名</th><th>開盤</th><th>最新</th><th>變幅</th></tr>`+
+    show.map(x=>{const [rn,nm]=x.k.includes('|')?x.k.split('|'):['-',x.k];
+      return `<tr><td>R${rn}</td><td>${nm}</td><td>${fmt(x.a)}</td><td>${fmt(x.b)}</td>
+      <td class="${x.r<1?'dn':'up'}">${x.r<1?'':'+'}${(100*(x.r-1)).toFixed(0)}%</td></tr>`}).join('')+'</table>';
+  const byrace={};
+  rows.forEach(x=>{const [rn,nm]=x.k.includes('|')?x.k.split('|'):['-',x.k]; (byrace[rn]=byrace[rn]||[]).push({nm,a:x.a,b:x.b,r:x.r})});
+  const rr=document.getElementById('races'); rr.style.display='block';
+  rr.innerHTML=`<b>每場落飛王</b><table><tr><th>場次</th><th>馬名</th><th>開盤</th><th>最新</th><th>變幅</th></tr>`+
+    Object.keys(byrace).sort((a,b)=>(a==='-'?99:+a)-(b==='-'?99:+b)).map(rn=>{
+      const w=byrace[rn].sort((x,y)=>x.r-y.r)[0];
+      return `<tr><td>R${rn}</td><td>${w.nm}</td><td>${fmt(w.a)}</td><td>${fmt(w.b)}</td>
+      <td class="${w.r<1?'dn':'up'}">${w.r<1?'':'+'}${(100*(w.r-1)).toFixed(0)}%</td></tr>`}).join('')+'</table>';
+}
+if(new URLSearchParams(location.search).get('demo')) loadDemo();
+</script></div></body></html>
