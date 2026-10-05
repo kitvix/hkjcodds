@@ -1,0 +1,41 @@
+name: HKJC 賠率快照
+on:
+  schedule:
+    - cron: '*/5 * * * *'
+  workflow_dispatch:
+permissions:
+  contents: write
+concurrency:
+  group: odds-capture
+  cancel-in-progress: false
+jobs:
+  capture:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    env:
+      RACE_DATE: 'auto'
+      VENUE: 'auto'
+      RACES: '11'
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 1 }
+      - uses: actions/setup-python@v5
+        with: { python-version: '3.11' }
+      - name: 抓取賠率
+        run: |
+          if [ "$RACE_DATE" = "auto" ]; then
+            python3 scripts/cloud_snapshot.py "" "$VENUE" "$RACES"
+          else
+            python3 scripts/cloud_snapshot.py "$RACE_DATE" "$VENUE" "$RACES"
+          fi
+      - name: 提交快照
+        run: |
+          git config user.name  "odds-bot"
+          git config user.email "odds-bot@users.noreply.github.com"
+          git add data/odds_snapshots
+          if git diff --staged --quiet; then
+            echo "無新快照"
+          else
+            git commit -m "odds $(date -u +'%Y-%m-%dT%H:%MZ')"
+            git push
+          fi
