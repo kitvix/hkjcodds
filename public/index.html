@@ -45,6 +45,8 @@ th{color:var(--dim);font-weight:600;font-size:12.5px}
 <div id="races" class="panel" style="display:none"></div>
 <div id="pools" class="panel" style="display:none"></div>
 <div id="alerts" class="panel" style="display:none"></div>
+<div id="matrix" class="panel" style="display:none"></div>
+<div id="pairseries" class="panel" style="display:none"></div>
 <div id="pairalerts" class="panel" style="display:none"></div>
 <div id="series" class="panel" style="display:none"></div>
 
@@ -56,7 +58,7 @@ async function loadDemo(){
   catch(e){alert('載入示範失敗')}
 }
 function note(html){const st=document.getElementById('status');st.style.display='block';st.innerHTML=html;
-  ['summary','moves','races','series','alerts','pools','pairalerts'].forEach(id=>document.getElementById(id).style.display='none');}
+  ['summary','moves','races','series','alerts','pools','matrix','pairseries','pairalerts'].forEach(id=>document.getElementById(id).style.display='none');}
 async function loadRemote(){
   const repo=document.getElementById('repo').value.trim();
   const date=document.getElementById('date').value.trim();
@@ -145,6 +147,8 @@ function render(snaps,src){
   renderSeries();
   renderAlerts();
   renderPools();
+  renderMatrix();
+  renderPairSeries();
   renderPairAlerts();
 }
 // ── 真實彩池（由 runs 取得）──
@@ -186,6 +190,90 @@ function renderPools(){
      '⚠️ 賽前彩池會由幾萬蚊增長到幾百萬，所以「淨流入」用真實彩池計算最準</div>';
   box.innerHTML=h;
 }
+// ── 馬號 → 馬名 ──
+function nameOf(race,no){
+  const ms=multiSnaps(); if(!ms.length) return String(no);
+  const r=ms[ms.length-1].runs[race]; if(!r) return String(no);
+  const x=(r.runners||[]).find(z=>+z.no===+no); return x?x.name:String(no);
+}
+// ── 📐 連贏/位置Q 矩陣（馬會格式）──
+function renderMatrix(){
+  const box=document.getElementById('matrix');
+  const ms=multiSnaps();
+  if(!ms.length){box.style.display='none';return}
+  box.style.display='block';
+  const races=[...new Set(ms.flatMap(s=>Object.keys(s.runs)))].sort((a,b)=>+a-+b);
+  if(!SERIES.race||!races.includes(SERIES.race)) SERIES.race=races[0];
+  const r=ms[ms.length-1].runs[SERIES.race];
+  const nums=(r.runners||[]).map(x=>+x.no).sort((a,b)=>a-b);
+  const sel=`<select onchange="SERIES.race=this.value;renderSeries();renderMatrix();renderPairSeries();renderPairAlerts()" style="background:#0e1830;color:#e8eefc;border:1px solid #243453;border-radius:8px;padding:6px 10px">
+    ${races.map(x=>`<option value="${x}" ${x===SERIES.race?'selected':''}>第 ${x} 場</option>`).join('')}</select>`;
+  const mk=(title,data)=>{
+    let h=`<div style="margin-top:14px"><b>${title}</b></div><div style="overflow-x:auto"><table style="border-collapse:collapse;font-size:12.5px;margin-top:6px">`;
+    h+='<tr><th style="background:#1b2f52;color:#cfe0ff;padding:5px 9px;border:1px solid #243453;text-align:left">'+title+'</th>';
+    nums.filter(n=>n>nums[0]).forEach(n=>{h+=`<th style="background:#1b2f52;color:#cfe0ff;padding:5px 9px;border:1px solid #243453;min-width:42px">${n}</th>`});
+    h+='<th style="background:#0b1220"></th></tr>';
+    nums.slice(0,-1).forEach(i=>{
+      h+='<tr>';
+      nums.filter(n=>n>nums[0]).forEach(j=>{
+        if(j<i){h+='<td style="border:1px solid #16233c;padding:5px 9px"></td>';return}
+        if(j===i){h+=`<td style="background:#0b1220;color:#93a7c9;padding:5px 9px;border:1px solid #243453;text-align:center">${i}</td>`;return}
+        const v=data[i+'-'+j]||data[j+'-'+i];
+        const hi=(v&&v<=8.7);
+        h+=`<td style="border:1px solid #16233c;padding:5px 9px;text-align:center;${hi?'background:#c0392b;color:#fff;font-weight:700':''}">${v?v.toFixed(v<10?1:0):''}</td>`;
+      });
+      h+=`<td style="background:#1b2f52;color:#cfe0ff;padding:5px 9px;border:1px solid #243453;text-align:center;font-weight:600">${i}</td></tr>`;
+    });
+    h+='</table></div>';
+    return h;
+  };
+  let h=`<b>📐 連贏／位置Q 賠率矩陣</b> <span class="muted">（馬會格式，資料來源：${ms[ms.length-1].hhmm}）</span> ${sel}`;
+  h+=mk('連贏', r.qin||{});
+  h+=mk('位置Q', r.qpl||{});
+  h+='<div class="muted" style="margin-top:10px;line-height:1.8">橫行 = 馬號（右邊深色格）｜直欄 = 馬號（頂部）｜交叉格 = 該組合賠率｜🔴 紅格 = ≤8.7（熱門組合）</div>';
+  box.innerHTML=h;
+}
+// ── 📈 連贏/位置Q 走勢（組合層面）──
+function renderPairSeries(){
+  const box=document.getElementById('pairseries');
+  const ms=multiSnaps();
+  if(ms.length<2){box.style.display='none';return}
+  box.style.display='block';
+  const rn=SERIES.race;
+  // 用「有有效組合數據」嘅快照（早期舊版抓取有 999，已過濾）
+  const valid=ms.filter(x=>{const r=x.runs[rn]; if(!r) return false;
+    return Object.keys(r.qin||{}).length>=40 && Object.keys(r.qpl||{}).length>=40});
+  if(valid.length<2){box.style.display='none';return}
+  const first=valid[0], last=valid[valid.length-1];
+  const build=pool=>{
+    const o1=first.runs[rn][pool]||{}, o2=last.runs[rn][pool]||{};
+    const rows=[];
+    for(const k in o2){
+      const a=o1[k], b=o2[k];
+      if(!a||!b||a<1.5||b<1.5||a>999||b>999) continue;
+      rows.push({k,a,b,r:b/a});
+    }
+    return rows.sort((x,y)=>x.r-y.r);
+  };
+  const mk=(title,rows)=>{
+    if(!rows.length) return '';
+    const seen=new Set(); const show=[];
+    [...rows.slice(0,8),...rows.slice(-8).reverse()].forEach(x=>{if(!seen.has(x.k)){seen.add(x.k);show.push(x)}});
+    let h=`<div style="margin-top:14px"><b>${title}</b> <span class="muted">（${rows.length} 組，${first.hhmm} → ${last.hhmm}）</span></div>`;
+    h+='<div style="overflow-x:auto"><table style="margin-top:6px"><tr><th>組合</th><th>馬名</th><th>開盤</th><th>最新</th><th>變幅</th></tr>';
+    for(const x of show){
+      const [i,j]=x.k.split('-');
+      const cls=x.r<1?'dn':'up';
+      h+=`<tr><td><b>${i}-${j}</b></td><td>${nameOf(rn,i)} × ${nameOf(rn,j)}</td>
+          <td>${x.a.toFixed(1)}</td><td><b>${x.b.toFixed(1)}</b></td>
+          <td class="${cls}"><b>${x.r<1?'':'+'}${(100*(x.r-1)).toFixed(0)}%</b></td></tr>`;
+    }
+    h+='</table></div>';
+    return h;
+  };
+  box.innerHTML=`<b>📈 連贏／位置Q 賠率走勢</b> <span class="muted">（第 ${rn} 場｜落飛最多 8 組＋退飛最多 8 組）</span>`+
+    mk('連贏',build('qin'))+mk('位置Q',build('qpl'));
+}
 // ── 🔀 連贏/位置Q 大幅變動 ──
 function renderPairAlerts(){
   const box=document.getElementById('pairalerts');
@@ -204,7 +292,7 @@ function renderPairAlerts(){
         for(const k in o2){
           const v1=o1[k], v2=o2[k];
           if(!v1||!v2) continue;
-          if(v1<2||v1>120||v2<2||v2>120) continue;          // 收窄範圍
+          if(v1<1.5||v1>500||v2<1.5||v2>500) continue;      // 合理範圍
           const ch=100*(v2/v1-1);
           if(ch<-35||ch>70) continue;                       // 只保留典型合理變幅
           if(Math.abs(ch)>=20) hits.push({hhmm:B.hhmm,race:rn,pool:pool==='qin'?'連贏':'位置Q',k,v1,v2,ch,dt});
@@ -214,7 +302,8 @@ function renderPairAlerts(){
   }
   if(!hits.length){box.innerHTML='<b>🔀 連贏／位置Q 大幅變動</b><div class="muted" style="margin-top:8px">未偵測到組合賠率變動 ≥20%（≤20 分鐘）</div>';return}
   hits.sort((x,y)=>Math.abs(y.ch)-Math.abs(x.ch));
-  let h=`<b>🔀 連贏／位置Q 大幅變動</b> <span class="badge warn">實驗中 · 解析待驗證</span> <span class="muted">（變幅 20-70%、賠率 2-120）｜共 ${hits.length} 條</span>`;
+  const byRace={}; hits.forEach(z=>{(byRace[z.race]=byRace[z.race]||[]).push(z)});
+  let h=`<b>🔀 連贏／位置Q 大幅變動</b> <span class="badge warn">實驗中 · 解析待驗證</span> <span class="muted">（變幅 20-70%、賠率 1.5-500）｜共 ${hits.length} 條</span>`;
   h+='<div style="overflow-x:auto;margin-top:10px"><table><tr><th>時間</th><th>場次</th><th>彩池</th><th>組合</th><th>賠率</th><th>變幅</th><th>間隔</th></tr>';
   for(const z of hits.slice(0,20)){
     const cls=z.ch<0?'dn':'up';
