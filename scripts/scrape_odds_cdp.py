@@ -92,47 +92,80 @@ class CDP:
         try: self.proc.terminate()
         except Exception: pass
 
-# 喺頁面內抽取獨贏/位置表
+# 喺頁面內抽取：獨贏/位置 + 彩池總額
 JS_WP = r"""
 (() => {
-  const out=[];
+  const num=v=>{const m=String(v||'').replace(/,/g,'').match(/(\d+(?:\.\d+)?)/); if(!m) return null; const x=parseFloat(m[1]); return (x>0 && x<900)?x:null;};
+  const out={runners:[],pools:{},totals:{}};
   document.querySelectorAll('table').forEach(tb=>{
     const rows=[...tb.querySelectorAll('tr')];
     if(!rows.length) return;
     const head=[...rows[0].querySelectorAll('th,td')].map(c=>c.textContent.trim());
-    if(!(head.includes('馬名') && head.includes('獨贏'))) return;
-    const iNo=head.indexOf('馬號'), iNm=head.indexOf('馬名'), iW=head.indexOf('獨贏'), iP=head.indexOf('位置');
-    rows.slice(1).forEach(r=>{
-      const c=[...r.querySelectorAll('td,th')].map(x=>x.textContent.trim());
-      if(c.length<=iNm) return;
-      const num=(c[iNo]||'').match(/\d+/); if(!num) return;
-      const f=v=>{const m=(v||'').match(/\d+(\.\d+)?/); return m?parseFloat(m[0]):null};
-      out.push({no:parseInt(num[0]), name:c[iNm], win:f(c[iW]), place:f(c[iP])});
-    });
+    // ① 桌面版排位表：表頭含 檔位 + 獨贏 + 位置
+    if(head.includes('檔位') && head.includes('獨贏') && head.includes('位置')){
+      const iN=head.indexOf('馬號'),iM=head.indexOf('馬名'),iW=head.indexOf('獨贏'),iP=head.indexOf('位置');
+      const seen=new Set();
+      rows.slice(1).forEach(r=>{
+        const c=[...r.querySelectorAll('td,th')].map(x=>x.textContent.trim());
+        if(c.length<=Math.max(iM,iW,iP)) return;
+        const m=String(c[iN]||'').match(/\d+/); if(!m) return;
+        const no=parseInt(m[0]); if(seen.has(no)) return; seen.add(no);
+        out.runners.push({no:no,name:c[iM],win:num(c[iW]),place:num(c[iP])});
+      });
+      return;
+    }
+    // ② 彩池總額表：行 = 彩池名 + $金額
+    const txt=tb.textContent||'';
+    if(txt.includes('總投注額')||(txt.includes('獨贏')&&/\$/.test(txt)&&rows.length<10)){
+      rows.forEach(r=>{
+        const c=[...r.querySelectorAll('td,th')].map(x=>x.textContent.trim());
+        for(let i=0;i<c.length;i++){
+          const lab=c[i].replace(/\s/g,'');
+          const val=(c[i+1]||'').replace(/[^\d]/g,'');
+          if(!val) continue;
+          const n=parseInt(val);
+          if(lab==='獨贏') out.pools.WIN=n;
+          else if(lab==='位置') out.pools.PLA=n;
+          else if(lab==='連贏') out.pools.QIN=n;
+          else if(lab==='位置Q') out.pools.QPL=n;
+          else if(lab==='四連環') out.pools.FF=n;
+          else if(lab==='單T') out.pools.TCE=n;
+          else if(lab==='三重彩') out.pools.TRI=n;
+          else if(lab==='孖寶') out.pools.DBL=n;
+          else if(lab.indexOf('所有彩池')>=0) out.totals.all=n;
+          else if(lab.indexOf('單場賽事彩池')>=0) out.totals.single=n;
+        }
+      });
+    }
   });
   return JSON.stringify(out);
 })()
 """
-# 連贏 / 位置Q 矩陣
+# 連贏 / 位置Q：用 cell id（qb_QIN_1_2）
 JS_WPQ = r"""
 (() => {
-  const res={qin:{},qpl:{}};
+  const res={qin:{},qpl:{},pools:{}};
   document.querySelectorAll('table').forEach(tb=>{
-    const txt=(tb.textContent||'').replace(/\s+/g,' ').trim();
-    let key=null;
-    if(txt.startsWith('賠率連贏')||txt.startsWith('連贏')) key='qin';
-    else if(txt.startsWith('位置Q')) key='qpl';
-    if(!key) return;
-    const rows=[...tb.querySelectorAll('tr')];
-    const head=[...rows[0].querySelectorAll('th,td')].map(c=>c.textContent.trim());
-    rows.slice(1).forEach(r=>{
-      const c=[...r.querySelectorAll('td,th')].map(x=>x.textContent.trim());
-      const rn=parseInt(c[0]||''); if(!rn) return;
-      for(let j=1;j<head.length;j++){
-        const o=parseFloat(c[j]||''); const cn=parseInt(head[j]||'');
-        if(o>0 && cn) res[key][rn+'-'+cn]=o;
-      }
-    });
+    const t=(tb.textContent||'');
+    if(t.includes('總投注額')||(t.includes('連贏')&&/\$/.test(t)&&tb.querySelectorAll('tr').length<10)){
+      [...tb.querySelectorAll('tr')].forEach(r=>{
+        const c=[...r.querySelectorAll('td,th')].map(x=>x.textContent.trim());
+        for(let i=0;i<c.length-1;i++){
+          const lab=c[i].replace(/\s/g,''), val=(c[i+1]||'').replace(/[^\d]/g,'');
+          if(!val) continue; const n=parseInt(val);
+          if(lab==='連贏') res.pools.QIN=n; else if(lab==='位置Q') res.pools.QPL=n;
+        }
+      });
+    }
+  });
+  ['QIN','QPL'].forEach(pool=>{
+    const rx=new RegExp('id="qb_'+pool+'_(\\d+)_(\\d+)"[^>]*>([\\s\\S]*?)</t[dh]>','g');
+    let m; const page=document.documentElement.innerHTML;
+    while((m=rx.exec(page))!==null){
+      const txt=m[3].replace(/<[^>]+>/g,'').trim().replace(/,/g,'');
+      const v=parseFloat(txt);
+      if(v>0&&v<9000) res[pool==='QIN'?'qin':'qpl'][m[1]+'-'+m[2]]=v;
+    }
   });
   return JSON.stringify(res);
 })()
@@ -142,21 +175,32 @@ def main():
     date = sys.argv[1] if len(sys.argv) > 1 else '2026-10-07'
     venue = sys.argv[2] if len(sys.argv) > 2 else 'HV'
     nrace = int(sys.argv[3]) if len(sys.argv) > 3 else 11
+    only = sys.argv[4] if len(sys.argv) > 4 else None      # 指定單場（快速模式）
     c = CDP()
     try:
-        allruns = {}
-        for n in range(1, nrace + 1):
+        allruns = {}; miss = 0
+        rng = [int(only)] if only else list(range(1, nrace + 1))
+        for n in rng:
             c.goto('https://bet.hkjc.com/ch/racing/wp/%s/%s/%d' % (date, venue, n))
             wp = c.js(JS_WP)
-            rows = json.loads(wp) if wp else []
+            d = json.loads(wp) if wp else {}
+            rows = d.get('runners', [])
             if not rows or all(r['win'] is None for r in rows):
-                print('  R%-2d 未公佈（或仍載入中）' % n); continue
+                print('  R%-2d 未公佈（或仍載入中）' % n)
+                miss += 1
+                if miss >= 2: break          # 連續兩場冇 → 應該到尾
+                continue
+            miss = 0
             c.goto('https://bet.hkjc.com/ch/racing/wpq/%s/%s/%d' % (date, venue, n))
             m = c.js(JS_WPQ)
             mat = json.loads(m) if m else {}
-            allruns[str(n)] = {'runners': rows, 'qin': mat.get('qin', {}), 'qpl': mat.get('qpl', {})}
-            print('  R%-2d %2d 匹｜獨贏/位置 ✓｜連贏 %d 組、位置Q %d 組' %
-                  (n, len(rows), len(mat.get('qin', {})), len(mat.get('qpl', {}))))
+            pools = dict(d.get('pools', {}))
+            pools.update({k: v for k, v in mat.get('pools', {}).items() if k in ('QIN', 'QPL')})
+            allruns[str(n)] = {'runners': rows, 'qin': mat.get('qin', {}), 'qpl': mat.get('qpl', {}),
+                               'pools': pools, 'totals': d.get('totals', {})}
+            print('  R%-2d %2d 匹｜連贏 %d、位置Q %d｜彩池 %s' %
+                  (n, len(rows), len(mat.get('qin', {})), len(mat.get('qpl', {})),
+                   {k: v for k, v in pools.items() if v}))
         if not allruns:
             print('未取得任何賠率（可能未公佈）'); return
         import datetime
