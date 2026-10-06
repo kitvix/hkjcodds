@@ -127,8 +127,8 @@ function render(snaps,src){
   // 自適應缺漏偵測：用「中位間隔嘅 2.5 倍」做門檻（最少 8 分鐘）
   const diffs=[];
   for(let i=1;i<snaps.length;i++) diffs.push(toMin(snaps[i].hhmm)-toMin(snaps[i-1].hhmm));
-  const sorted=[...diffs].sort((a,b)=>a-b);
-  const med=sorted.length?sorted[Math.floor(sorted.length/2)]:3;
+  const sortedDiffs=[...diffs].sort((a,b)=>a-b);
+  const med=sortedDiffs.length?sortedDiffs[Math.floor(sortedDiffs.length/2)]:3;
   const THR=Math.max(8, Math.round(med*2.5));
   const gaps=[];
   for(let i=1;i<snaps.length;i++){const d=diffs[i-1];
