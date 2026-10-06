@@ -208,21 +208,32 @@ function renderMatrix(){
   const nums=(r.runners||[]).map(x=>+x.no).sort((a,b)=>a-b);
   const sel=`<select onchange="SERIES.race=this.value;renderSeries();renderMatrix();renderPairSeries();renderPairAlerts()" style="background:#0e1830;color:#e8eefc;border:1px solid #243453;border-radius:8px;padding:6px 10px">
     ${races.map(x=>`<option value="${x}" ${x===SERIES.race?'selected':''}>第 ${x} 場</option>`).join('')}</select>`;
+  const nmap={}; (r.runners||[]).forEach(x=>nmap[+x.no]=x.name);
   const mk=(title,data)=>{
-    let h=`<div style="margin-top:14px"><b>${title}</b></div><div style="overflow-x:auto"><table style="border-collapse:collapse;font-size:12.5px;margin-top:6px">`;
-    h+='<tr><th style="background:#1b2f52;color:#cfe0ff;padding:5px 9px;border:1px solid #243453;text-align:left">'+title+'</th>';
-    nums.filter(n=>n>nums[0]).forEach(n=>{h+=`<th style="background:#1b2f52;color:#cfe0ff;padding:5px 9px;border:1px solid #243453;min-width:42px">${n}</th>`});
-    h+='<th style="background:#0b1220"></th></tr>';
-    nums.slice(0,-1).forEach(i=>{
+    const lo=Math.min(...Object.values(data).filter(v=>v>1.5));
+    let h=`<div style="margin-top:14px"><b>${title}</b></div>`;
+    // 馬名對照
+    h+='<div class="muted" style="margin:5px 0;font-size:12px">'+nums.map(n=>`<b>${n}</b> ${nmap[n]||''}`).join('　')+'</div>';
+    h+='<div style="overflow-x:auto"><table style="border-collapse:collapse;font-size:12.5px;margin-top:4px">';
+    // 表頭：第一格空 + 直欄馬號
+    h+='<tr><th style="background:#1b2f52;color:#cfe0ff;padding:5px 8px;border:1px solid #243453;text-align:left;min-width:92px">橫\直</th>';
+    nums.forEach(j=>{h+=`<th style="background:#1b2f52;color:#cfe0ff;padding:5px 8px;border:1px solid #243453;text-align:center;min-width:46px">${j}</th>`});
+    h+='</tr>';
+    nums.forEach(i=>{
       h+='<tr>';
-      nums.filter(n=>n>nums[0]).forEach(j=>{
-        if(j<i){h+='<td style="border:1px solid #16233c;padding:5px 9px"></td>';return}
-        if(j===i){h+=`<td style="background:#0b1220;color:#93a7c9;padding:5px 9px;border:1px solid #243453;text-align:center">${i}</td>`;return}
-        const v=data[i+'-'+j]||data[j+'-'+i];
-        const hi=(v&&v<=8.7);
-        h+=`<td style="border:1px solid #16233c;padding:5px 9px;text-align:center;${hi?'background:#c0392b;color:#fff;font-weight:700':''}">${v?v.toFixed(v<10?1:0):''}</td>`;
+      // 左邊：馬號 + 馬名
+      h+=`<td style="background:#1b2f52;color:#cfe0ff;padding:5px 8px;border:1px solid #243453;white-space:nowrap"><b>${i}</b> ${nmap[i]||''}</td>`;
+      nums.forEach(j=>{
+        if(j<i){h+='<td style="border:1px solid #16233c;background:#0b1220"></td>';return}
+        if(i===j){h+='<td style="background:#0b1220;border:1px solid #243453"></td>';return}
+        const v=data[i+'-'+j]; if(!v){h+='<td style="border:1px solid #16233c"></td>';return}
+        const hot=(v===lo);
+        const cls=v<=10?'style="border:1px solid #16233c;text-align:center;background:#c0392b;color:#fff;font-weight:700"'
+                       :(v<=25?'style="border:1px solid #16233c;text-align:center;background:#e67e22;color:#fff;font-weight:600"'
+                              :'style="border:1px solid #16233c;text-align:center"');
+        h+=`<td ${cls}>${v.toFixed(v<10?1:0)}</td>`;
       });
-      h+=`<td style="background:#1b2f52;color:#cfe0ff;padding:5px 9px;border:1px solid #243453;text-align:center;font-weight:600">${i}</td></tr>`;
+      h+='</tr>';
     });
     h+='</table></div>';
     return h;
@@ -230,7 +241,10 @@ function renderMatrix(){
   let h=`<b>📐 連贏／位置Q 賠率矩陣</b> <span class="muted">（馬會格式，資料來源：${ms[ms.length-1].hhmm}）</span> ${sel}`;
   h+=mk('連贏', r.qin||{});
   h+=mk('位置Q', r.qpl||{});
-  h+='<div class="muted" style="margin-top:10px;line-height:1.8">橫行 = 馬號（右邊深色格）｜直欄 = 馬號（頂部）｜交叉格 = 該組合賠率｜🔴 紅格 = ≤8.7（熱門組合）</div>';
+  h+='<div class="muted" style="margin-top:10px;line-height:1.8">'+
+     '📖 <b>睇法</b>：左邊一行 = 第一匹馬（馬號＋馬名）｜上面一欄 = 第二匹馬（馬號）｜交叉格 = 該組合賠率<br>'+
+     '🔴 紅格 = 賠率 ≤10（大熱組合）｜🟠 橙格 = 10-25（熱門組合）｜空白 = 未報價<br>'+
+     '例：第一行（1 獎星）× 第 4 欄 = 組合「1-4」賠率</div>';
   box.innerHTML=h;
 }
 // ── 📈 連贏/位置Q 走勢（組合層面）──
