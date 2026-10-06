@@ -316,7 +316,12 @@ function renderPairSeries(){
   const valid=ms.filter(x=>{const r=x.runs[rn]; if(!r) return false;
     return Object.keys(r.qin||{}).length>=40 && Object.keys(r.qpl||{}).length>=40});
   if(valid.length<2){box.style.display='none';return}
-  const first=valid[0], last=valid[valid.length-1];
+  // 基準：彩池達到最終 40% 嘅第一張快照（開盤彩池只佔 10%，係噪音）
+  const finalPool=(()=>{const z=valid[valid.length-1].runs[rn];return z&&z.pools?z.pools.WIN:null})();
+  let baseIdx=0;
+  if(finalPool) for(let i=0;i<valid.length;i++){const pp=(valid[i].runs[rn]||{}).pools;
+    if(pp&&pp.WIN&&pp.WIN>=finalPool*0.4){baseIdx=i;break}}
+  const first=valid[baseIdx], last=valid[valid.length-1];
   const toMin=h=>Math.floor(+h/100)*60+(+h%100);
   const tLast=toMin(last.hhmm);
   // 最近 30 分鐘內嘅快照（短期變幅）
@@ -335,7 +340,11 @@ function renderPairSeries(){
       const sc=os?os[k]:null;
       rows.push({k,a,b,r:b/a, sc, sr:(sc&&sc>1.5)?b/sc:null, lo, hi, hist});
     }
-    return rows.sort((x,y)=>x.r-y.r);
+    // 相對市場：該組合變幅 − 全部組合中位數變幅
+    const med=(()=>{const arr=rows.map(x=>x.r-1).sort((a,b)=>a-b);
+      return arr.length?arr[Math.floor(arr.length/2)]:0})();
+    rows.forEach(x=>{x.rel=(x.r-1)-med});
+    return rows.sort((x,y)=>x.rel-y.rel);
   };
   const mk=(title,rows)=>{
     if(!rows.length) return '';
@@ -344,7 +353,8 @@ function renderPairSeries(){
     let h=`<div style="margin-top:14px"><b>${title}</b> <span class="muted">（${rows.length} 組，${first.hhmm} → ${last.hhmm}）</span></div>`;
     const t1=firstShort?(firstShort.hhmm.slice(0,2)+':'+firstShort.hhmm.slice(2)):'—';
     const t2=last.hhmm.slice(0,2)+':'+last.hhmm.slice(2);
-    h+='<div style="overflow-x:auto"><table style="margin-top:6px"><tr><th>組合</th><th>馬名</th><th>開盤</th><th>最新</th><th>總變幅</th>'+
+    h+='<div style="overflow-x:auto"><table style="margin-top:6px"><tr><th>組合</th><th>馬名</th><th>開盤</th><th>最新</th><th>變幅<br><span style="font-weight:400;font-size:10.5px">(vs 基準)</span></th>'+
+      '<th>相對市場<br><span style="font-weight:400;font-size:10.5px">(扣除大市)</span></th>'+
       '<th>近 30 分<br><span style="font-weight:400;font-size:10.5px">('+t1+' → '+t2+')</span></th>'+
       '<th>區間（最低-最高）</th><th>走勢</th></tr>';
     for(const x of show){
@@ -359,6 +369,7 @@ function renderPairSeries(){
       h+=`<tr><td><b>${i}-${j}</b></td><td>${nameOf(rn,i)} × ${nameOf(rn,j)}</td>
           <td>${x.a.toFixed(1)}</td><td><b>${x.b.toFixed(1)}</b></td>
           <td class="${cls}"><b>${x.r<1?'':'+'}${(100*(x.r-1)).toFixed(0)}%</b></td>
+          <td class="${x.rel<0?'dn':'up'}"><b>${x.rel<0?'':'+'}${(100*x.rel).toFixed(0)}%</b></td>
           <td class="${scls}">${x.sr!=null?((x.sr<1?'':'+')+(100*(x.sr-1)).toFixed(0)+'%'):'—'}</td>
           <td class="muted" style="font-size:11.5px">${x.lo!=null?x.lo.toFixed(0)+' - '+x.hi.toFixed(0):'—'}</td>
           <td>${spark(x.hist)}</td></tr>`;
