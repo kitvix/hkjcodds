@@ -324,9 +324,12 @@ function renderDrops(){
       // ③ 相對市場（扣除全場中位數）
       const med=[...shares.map(x=>x.d)].sort((a,b)=>a-b)[Math.floor(ks.length/2)];
       shares.forEach(x=>{
-        const amt0=p0*0.825*x.s0, amt1=p1*0.825*x.s1, net=amt1-amt0;
-        const rel=100*(x.d-med);
-        if(net>=FLOW.minAmt && rel>=FLOW.minRel)
+        // 超額流入 = 現時彩池 × 82.5% × 佔比變化
+        // （即「相對於全場應得份額，額外流入／流出嘅錢」）
+        const net = p1*0.825*x.d;
+        const rel = 100*(x.d-med);
+        // 只顯示「賠率下跌（佔比上升）」= 真正有大額資金流入
+        if(net>=FLOW.minAmt && rel>=FLOW.minRel && x.d>0 && k2[x.k]<k1[x.k])
           ev.push({hhmm:B.hhmm, race:rn, nm:x.k, a:k1[x.k], b:k2[x.k],
                    net, rel, dpct:100*x.d, pool:p1, dt});
       });
@@ -339,7 +342,7 @@ function renderDrops(){
     　相對市場 ≥ <input type="range" min="0" max="10" step="0.5" value="${FLOW.minRel}" oninput="FLOW.minRel=+this.value;renderDrops()" style="width:110px;vertical-align:middle"> <b>${FLOW.minRel}%</b>
   </div>`;
   if(!ev.length){box.innerHTML='<b>💰 大額資金流入警示</b>'+ctrl+'<div class="muted" style="margin-top:8px">未符合條件（可調低上面嘅門檻）</div>';return}
-  let h=`<b>💰 大額資金流入警示</b> <span class="muted">（真金白銀 + 已排除早期噪音 + 扣除大市）｜共 ${ev.length} 條</span>${ctrl}`;
+  let h=`<b>💰 大額資金流入警示</b> <span class="muted">（只列**賠率下跌**＝真有大額資金流入嘅馬）｜共 ${ev.length} 條</span>${ctrl}`;
   h+='<div style="overflow-x:auto;margin-top:10px"><table><tr><th>時間</th><th>場次</th><th>馬名</th><th>賠率變化</th><th>淨流入</th><th>佔比變化</th><th>相對市場</th><th>該場彩池</th><th>間隔</th></tr>';
   for(const z of ev.slice(0,25)){
     h+=`<tr><td>${z.hhmm.slice(0,2)}:${z.hhmm.slice(2)}</td><td>R${z.race}</td><td><b>${z.nm}</b></td>
@@ -355,7 +358,8 @@ function renderDrops(){
      '<b>為何要用真實金額而唔係 % 跌幅？</b><br>'+
      '• 早期彩池細（佔最終 <10%）→ 小額注碼已可令賠率大跌 ✗ 噪音<br>'+
      '• 所以加上「彩池 ≥ 最終 40%」過濾 → 今日 129 個事件只剩 ~15 個可信 ✓<br>'+
-     '• 「相對市場」扣除全場同步變化 → 隔離真正嘅個別資金流 ✓</div>';
+     '• 「相對市場」扣除全場同步變化 → 隔離真正嘅個別資金流 ✓<br>'+
+     '<b>只會列出賠率下跌嘅馬</b>（佔比上升 = 真正有人大手買入）✓</div>';
   box.innerHTML=h;
 }
 // ── 📐 連贏/位置Q 矩陣（馬會格式）──
