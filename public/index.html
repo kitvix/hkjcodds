@@ -45,6 +45,7 @@ th{color:var(--dim);font-weight:600;font-size:12.5px}
 <div id="races" class="panel" style="display:none"></div>
 <div id="pools" class="panel" style="display:none"></div>
 <div id="alerts" class="panel" style="display:none"></div>
+<div id="slottop" class="panel" style="display:none"></div>
 <div id="drops" class="panel" style="display:none"></div>
 <div id="matrix" class="panel" style="display:none"></div>
 <div id="pairseries" class="panel" style="display:none"></div>
@@ -59,7 +60,7 @@ async function loadDemo(){
   catch(e){alert('載入示範失敗')}
 }
 function note(html){const st=document.getElementById('status');st.style.display='block';st.innerHTML=html;
-  ['summary','moves','races','series','alerts','pools','drops','matrix','pairseries','pairalerts'].forEach(id=>document.getElementById(id).style.display='none');}
+  ['summary','moves','races','series','alerts','pools','slottop','drops','matrix','pairseries','pairalerts'].forEach(id=>document.getElementById(id).style.display='none');}
 async function loadRemote(){
   const repo=document.getElementById('repo').value.trim();
   const date=document.getElementById('date').value.trim();
@@ -157,6 +158,7 @@ function render(snaps,src){
   renderSeries();
   renderAlerts();
   renderPools();
+  renderSlotTop();
   renderDrops();
   renderMatrix();
   renderPairSeries();
@@ -206,6 +208,80 @@ function nameOf(race,no){
   const ms=multiSnaps(); if(!ms.length) return String(no);
   const r=ms[ms.length-1].runs[race]; if(!r) return String(no);
   const x=(r.runners||[]).find(z=>+z.no===+no); return x?x.name:String(no);
+}
+// ── ⏰ 時段 Top 10 跌幅（場次 + 彩池 + 時段）──
+let SLOT={race:'',pool:'WIN',slot:''};
+function slotKeyOf(s){
+  if(s.ts){const d=new Date(s.ts); if(!isNaN(d)) return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0')+' '+String(d.getHours()).padStart(2,'0')+':00';}
+  return '????-??-?? '+s.hhmm.slice(0,2)+':00';
+}
+function renderSlotTop(){
+  const box=document.getElementById('slottop');
+  const ms=multiSnaps(); if(!ms.length){box.style.display='none';return}
+  box.style.display='block';
+  const slots=[...new Set(ms.map(slotKeyOf))].sort();
+  const races=[...new Set(ms.flatMap(s=>Object.keys(s.runs)))].sort((a,b)=>+a-+b);
+  if(!SLOT.race||!races.includes(SLOT.race)) SLOT.race=races[0];
+  if(!SLOT.slot||!slots.includes(SLOT.slot)) SLOT.slot=slots[slots.length-1];
+  const sel=(id,opts,val,lab)=>`<select id="${id}" onchange="SLOT.${id}=this.value" style="background:#0e1830;color:#e8eefc;border:1px solid #243453;border-radius:8px;padding:7px 10px;font-size:13.5px">
+    ${opts.map(o=>`<option value="${o.v}" ${o.v===val?'selected':''}>${o.l}</option>`).join('')}</select>`;
+  let h=`<b>⏰ 時段 Top 10 跌幅</b> <span class="muted">（揀場次 + 彩池 + 時段 → 睇該時段跌得最勁嘅 10 匹／組合）</span>
+    <div style="margin-top:12px;display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap">
+      <div><label style="display:block;font-size:12px;color:#93a7c9;margin-bottom:4px">① 場次</label>
+        ${sel('race',races.map(r=>({v:r,l:'第 '+r+' 場'})),SLOT.race)}</div>
+      <div><label style="display:block;font-size:12px;color:#93a7c9;margin-bottom:4px">② 彩池</label>
+        ${sel('pool',[{v:'WIN',l:'獨贏'},{v:'PLA',l:'位置'},{v:'QIN',l:'連贏'},{v:'QPL',l:'位置Q'}],SLOT.pool)}</div>
+      <div><label style="display:block;font-size:12px;color:#93a7c9;margin-bottom:4px">③ 時段</label>
+        ${sel('slot',slots.map(x=>({v:x,l:x.replace('-','/').replace('-','/')+' - '+String(+x.slice(11,13)+1).padStart(2,'0')+':00'})),SLOT.slot)}</div>
+      <button onclick="searchSlotTop()" style="background:#1d3a63;border:1px solid #243453;color:#e8eefc;border-radius:8px;padding:8px 20px;font-size:14px;cursor:pointer;font-weight:600">🔍 搜索</button>
+    </div>
+    <div id="slotResult" style="margin-top:12px"></div>`;
+  box.innerHTML=h;
+  searchSlotTop();
+}
+function searchSlotTop(){
+  const el=document.getElementById('slotResult'); if(!el) return;
+  const ms=multiSnaps(), rn=SLOT.race, pool=SLOT.pool;
+  const inSlot=ms.filter(x=>slotKeyOf(x)===SLOT.slot);
+  if(!inSlot.length){el.innerHTML='<div class="muted">該時段冇快照</div>';return}
+  let base, end;
+  if(inSlot.length>=2){base=inSlot[0]; end=inSlot[inSlot.length-1];}
+  else{const i=ms.indexOf(inSlot[0]); base=i>0?ms[i-1]:inSlot[0]; end=inSlot[0];}
+  const get=(s,k)=>{
+    const r=s.runs&&s.runs[rn]; if(!r) return null;
+    if(pool==='WIN'||pool==='PLA'){
+      const nm=(k||'').split('|')[1];
+      const x=(r.runners||[]).find(z=>z.name===nm);
+      return x?(pool==='WIN'?x.win:x.place):null;
+    }
+    return (r[pool==='QIN'?'qin':'qpl']||{})[k];
+  };
+  // 目標清單
+  let keys=[];
+  const rEnd=end.runs[rn];
+  if(pool==='WIN'||pool==='PLA') keys=(rEnd.runners||[]).map(x=>(rn+'|'+x.name));
+  else keys=Object.keys(rEnd[pool==='QIN'?'qin':'qpl']||{});
+  const rows=[];
+  for(const k of keys){
+    const a=get(base,k), b=get(end,k);
+    if(!a||!b||a<1.5||b<1.5||a>999||b>999) continue;
+    const ch=100*(b/a-1);
+    if(ch<0) rows.push({k,a,b,ch});
+  }
+  rows.sort((x,y)=>x.ch-y.ch);
+  const top=rows.slice(0,10);
+  const poolName={WIN:'獨贏',PLA:'位置',QIN:'連贏',QPL:'位置Q'}[pool];
+  const nmOf=k=>{ if(pool==='WIN'||pool==='PLA') return k.split('|')[1];
+    const [i,j]=k.split('-'); return i+'-'+j+' <span class="muted">'+nameOf(rn,i)+' × '+nameOf(rn,j)+'</span>'; };
+  const fmtT=x=>x.replace(/-/g,'/');
+  if(!top.length){el.innerHTML='<div class="muted">該時段冇下跌記錄（快照數：'+inSlot.length+'）</div>';return}
+  el.innerHTML=`<div class="muted" style="margin-bottom:8px">時段：<b>${fmtT(SLOT.slot)}</b>　·　${poolName}　·　第 ${rn} 場　·　
+      基準 ${base.hhmm.slice(0,2)}:${base.hhmm.slice(2)} → ${end.hhmm.slice(0,2)}:${end.hhmm.slice(2)}（${inSlot.length} 張快照）</div>
+    <div style="overflow-x:auto"><table><tr><th>#</th><th>${pool==='WIN'||pool==='PLA'?'馬名':'組合'}</th><th>時段開始</th><th>時段結束</th><th>跌幅</th></tr>
+    ${top.map((x,i)=>`<tr><td class="muted">${i+1}</td><td><b>${nmOf(x.k)}</b></td>
+      <td>${x.a.toFixed(1)}</td><td><b>${x.b.toFixed(1)}</b></td>
+      <td class="dn"><b>${x.ch.toFixed(1)}%</b></td></tr>`).join('')}
+    </table></div>`;
 }
 // ── ⚡ 急跌事件（短時間大幅落飛）──
 function renderDrops(){
