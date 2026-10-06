@@ -68,11 +68,11 @@ async function loadRemote(){
   if(!repo||!date){note('<b>⚠️ 請填寫 GitHub repo 同賽日</b>');return}
   const path=`data/odds_snapshots/${date}.jsonl`;
   // 多重來源（raw 可能被擴充／防火牆阻擋）
+  const bust=Date.now();
   const urls=[
     {u:`https://raw.githubusercontent.com/${repo}/main/${path}`, kind:'raw', l:'GitHub raw'},
-    {u:`https://cdn.jsdelivr.net/gh/${repo}@main/${path}`, kind:'raw', l:'jsDelivr CDN'},
-    {u:`https://fastly.jsdelivr.net/gh/${repo}@main/${path}`, kind:'raw', l:'jsDelivr (Fastly)'},
-    {u:`https://api.github.com/repos/${repo}/contents/${path}?ref=main`, kind:'api', l:'GitHub API'},
+    {u:`https://api.github.com/repos/${repo}/contents/${path}?ref=main&t=${bust}`, kind:'api', l:'GitHub API'},
+    {u:`https://cdn.jsdelivr.net/gh/${repo}@main/${path}?t=${bust}`, kind:'raw', l:'jsDelivr'},
   ];
   const tried=[];
   for(const x of urls){
@@ -85,7 +85,24 @@ async function loadRemote(){
           const j=await r.json();
           txt=decodeURIComponent(escape(atob((j.content||'').replace(/\n/g,''))));
         } else { txt=await r.text(); }
-        if(txt && txt.trim()){render(parseJSONL(txt), x.l+' · '+repo+'/'+path); return}
+        if(txt && txt.trim()){
+          const parsed=parseJSONL(txt);
+          render(parsed, x.l+' · '+repo+'/'+path);
+          // 過舊警告
+          try{
+            const last=parsed[parsed.length-1];
+            if(last&&last.hhmm){
+              const d=new Date(); const nowMin=d.getHours()*60+d.getMinutes();
+              const lm=Math.floor(+last.hhmm/100)*60+(+last.hhmm%100);
+              const age=nowMin-lm;
+              if(age>45){
+                const st=document.getElementById('status');
+                st.innerHTML+=`<div style="margin-top:9px;color:#ffd76a">⚠️ 此來源資料較舊（最後快照 ${last.hhmm.slice(0,2)}:${last.hhmm.slice(2)}，約 ${age} 分鐘前）—— 可能係 CDN 快取。建議改用 GitHub raw 或按「載入雲端快照」重試。</div>`;
+              }
+            }
+          }catch(e){}
+          return;
+        }
       }
     }catch(e){ tried.push(x.l+'：'+e.message) }
   }
