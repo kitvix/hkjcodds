@@ -45,6 +45,7 @@ th{color:var(--dim);font-weight:600;font-size:12.5px}
 <div id="races" class="panel" style="display:none"></div>
 <div id="pools" class="panel" style="display:none"></div>
 <div id="alerts" class="panel" style="display:none"></div>
+<div id="drops" class="panel" style="display:none"></div>
 <div id="matrix" class="panel" style="display:none"></div>
 <div id="pairseries" class="panel" style="display:none"></div>
 <div id="pairalerts" class="panel" style="display:none"></div>
@@ -58,7 +59,7 @@ async function loadDemo(){
   catch(e){alert('載入示範失敗')}
 }
 function note(html){const st=document.getElementById('status');st.style.display='block';st.innerHTML=html;
-  ['summary','moves','races','series','alerts','pools','matrix','pairseries','pairalerts'].forEach(id=>document.getElementById(id).style.display='none');}
+  ['summary','moves','races','series','alerts','pools','drops','matrix','pairseries','pairalerts'].forEach(id=>document.getElementById(id).style.display='none');}
 async function loadRemote(){
   const repo=document.getElementById('repo').value.trim();
   const date=document.getElementById('date').value.trim();
@@ -147,6 +148,7 @@ function render(snaps,src){
   renderSeries();
   renderAlerts();
   renderPools();
+  renderDrops();
   renderMatrix();
   renderPairSeries();
   renderPairAlerts();
@@ -195,6 +197,55 @@ function nameOf(race,no){
   const ms=multiSnaps(); if(!ms.length) return String(no);
   const r=ms[ms.length-1].runs[race]; if(!r) return String(no);
   const x=(r.runners||[]).find(z=>+z.no===+no); return x?x.name:String(no);
+}
+// ── ⚡ 急跌事件（短時間大幅落飛）──
+function renderDrops(){
+  const box=document.getElementById('drops');
+  const ms=multiSnaps(); if(ms.length<2){box.style.display='none';return}
+  box.style.display='block';
+  const toMin=h=>Math.floor(+h/100)*60+(+h%100);
+  const ev=[];
+  for(let i=1;i<ms.length;i++){
+    const A=ms[i-1],B=ms[i]; const dt=toMin(B.hhmm)-toMin(A.hhmm);
+    if(dt<=0||dt>10) continue;                       // 只計 10 分鐘內嘅急變
+    for(const rn in B.runs){
+      const ra=A.runs[rn]; if(!ra) continue;
+      // 獨贏
+      const w1={},w2={};
+      (ra.runners||[]).forEach(x=>{if(x.win>1.2)w1[x.name]=x.win});
+      (B.runs[rn].runners||[]).forEach(x=>{if(x.win>1.2)w2[x.name]=x.win});
+      for(const nm in w2){ const a=w1[nm],b=w2[nm];
+        if(!a||!b) continue; const ch=100*(b/a-1);
+        if(ch<=-15) ev.push({hhmm:B.hhmm,race:rn,pool:'獨贏',label:nm,a,b,ch,dt,kind:'win'});
+      }
+      // 連贏 / 位置Q
+      for(const [pool,tag] of [['qin','連贏'],['qpl','位置Q']]){
+        const o1=ra[pool]||{}, o2=B.runs[rn][pool]||{};
+        for(const k in o2){ const a=o1[k],b=o2[k];
+          if(!a||!b||a<2||a>500||b<2||b>500) continue;
+          const ch=100*(b/a-1);
+          if(ch<=-15) ev.push({hhmm:B.hhmm,race:rn,pool:tag,label:k,a,b,ch,dt,kind:'pair'});
+        }
+      }
+    }
+  }
+  ev.sort((x,y)=>x.ch-y.ch);
+  if(!ev.length){box.innerHTML='<b>⚡ 急跌事件（10 分鐘內跌 ≥15%）</b><div class="muted" style="margin-top:8px">暫時未偵測到急跌</div>';return}
+  let h=`<b>⚡ 急跌事件（10 分鐘內跌 ≥15%）</b> <span class="muted">｜共 ${ev.length} 條｜按跌幅排序（呢啲就係「突然大幅落飛」）</span>`;
+  h+='<div style="overflow-x:auto;margin-top:10px"><table><tr><th>時間</th><th>場次</th><th>彩池</th><th>標的</th><th>賠率變化</th><th>跌幅</th><th>間隔</th><th>估算金額</th></tr>';
+  for(const z of ev.slice(0,25)){
+    const rn_=z.race, pool=realPool(rn_)||(parseFloat(document.getElementById('pool').value||'10'))*1e6;
+    let amt=null;
+    if(z.kind==='win'){ const share=(1/z.b)/(1/z.b); amt=pool*0.825*(1/z.b); }
+    const nmLine=z.kind==='pair'?(()=>{const [i,j]=z.label.split('-');return `${i}-${j} <span class="muted">${nameOf(rn_,i)} × ${nameOf(rn_,j)}</span>`})():z.label;
+    h+=`<tr><td>${z.hhmm.slice(0,2)}:${z.hhmm.slice(2)}</td><td>R${z.race}</td><td>${z.pool}</td>
+        <td>${nmLine}</td><td>${z.a.toFixed(1)} → <b>${z.b.toFixed(1)}</b></td>
+        <td class="dn"><b>${z.ch.toFixed(0)}%</b></td><td class="muted">${z.dt} 分</td>
+        <td class="muted">—</td></tr>`;
+  }
+  h+='</table></div>';
+  h+='<div class="muted" style="margin-top:9px;line-height:1.8">⚡ 呢個表就係你想睇嘅「某個時間突然大幅落飛」<br>📊 回測用法：記錄每個事件嘅時間／標的／跌幅 → 賽後對照賽果，睇下急跌馬嘅勝出率同回報</div>';
+  box.innerHTML=h;
 }
 // ── 📐 連贏/位置Q 矩陣（馬會格式）──
 function renderMatrix(){
@@ -266,13 +317,23 @@ function renderPairSeries(){
     return Object.keys(r.qin||{}).length>=40 && Object.keys(r.qpl||{}).length>=40});
   if(valid.length<2){box.style.display='none';return}
   const first=valid[0], last=valid[valid.length-1];
+  const toMin=h=>Math.floor(+h/100)*60+(+h%100);
+  const tLast=toMin(last.hhmm);
+  // 最近 30 分鐘內嘅快照（短期變幅）
+  const recent=valid.filter(x=>tLast-toMin(x.hhmm)<=30 && tLast-toMin(x.hhmm)>=0);
+  const firstShort=recent.length>1?recent[0]:null;
   const build=pool=>{
     const o1=first.runs[rn][pool]||{}, o2=last.runs[rn][pool]||{};
+    const os=firstShort?(firstShort.runs[rn][pool]||{}):null;
     const rows=[];
     for(const k in o2){
       const a=o1[k], b=o2[k];
       if(!a||!b||a<1.5||b<1.5||a>999||b>999) continue;
-      rows.push({k,a,b,r:b/a});
+      // 歷史序列（最低/最高）
+      const hist=valid.map(x=>(x.runs[rn][pool]||{})[k]).filter(v=>v>1.5&&v<999);
+      const lo=hist.length?Math.min(...hist):null, hi=hist.length?Math.max(...hist):null;
+      const sc=os?os[k]:null;
+      rows.push({k,a,b,r:b/a, sc, sr:(sc&&sc>1.5)?b/sc:null, lo, hi, hist});
     }
     return rows.sort((x,y)=>x.r-y.r);
   };
@@ -281,13 +342,26 @@ function renderPairSeries(){
     const seen=new Set(); const show=[];
     [...rows.slice(0,8),...rows.slice(-8).reverse()].forEach(x=>{if(!seen.has(x.k)){seen.add(x.k);show.push(x)}});
     let h=`<div style="margin-top:14px"><b>${title}</b> <span class="muted">（${rows.length} 組，${first.hhmm} → ${last.hhmm}）</span></div>`;
-    h+='<div style="overflow-x:auto"><table style="margin-top:6px"><tr><th>組合</th><th>馬名</th><th>開盤</th><th>最新</th><th>變幅</th></tr>';
+    const t1=firstShort?(firstShort.hhmm.slice(0,2)+':'+firstShort.hhmm.slice(2)):'—';
+    const t2=last.hhmm.slice(0,2)+':'+last.hhmm.slice(2);
+    h+='<div style="overflow-x:auto"><table style="margin-top:6px"><tr><th>組合</th><th>馬名</th><th>開盤</th><th>最新</th><th>總變幅</th>'+
+      '<th>近 30 分<br><span style="font-weight:400;font-size:10.5px">('+t1+' → '+t2+')</span></th>'+
+      '<th>區間（最低-最高）</th><th>走勢</th></tr>';
     for(const x of show){
       const [i,j]=x.k.split('-');
       const cls=x.r<1?'dn':'up';
+      const scls=(x.sr!=null)?(x.sr<1?'dn':'up'):'';
+      const spark=(arr)=>{ if(!arr||arr.length<2) return '';
+        const mn=Math.min(...arr),mx=Math.max(...arr),W=90,Hh=22,kk=arr.length;
+        const pts=arr.map((v,t)=>{const px=kk>1?t/(kk-1)*W:0;const py=mx>mn?Hh-(v-mn)/(mx-mn)*Hh:Hh/2;return px.toFixed(1)+','+py.toFixed(1)}).join(' ');
+        const col=arr[arr.length-1]<arr[0]?'#8ff0c8':'#ff8f7a';
+        return `<svg width="${W}" height="${Hh}" style="vertical-align:middle"><polyline points="${pts}" fill="none" stroke="${col}" stroke-width="1.5"/></svg>`};
       h+=`<tr><td><b>${i}-${j}</b></td><td>${nameOf(rn,i)} × ${nameOf(rn,j)}</td>
           <td>${x.a.toFixed(1)}</td><td><b>${x.b.toFixed(1)}</b></td>
-          <td class="${cls}"><b>${x.r<1?'':'+'}${(100*(x.r-1)).toFixed(0)}%</b></td></tr>`;
+          <td class="${cls}"><b>${x.r<1?'':'+'}${(100*(x.r-1)).toFixed(0)}%</b></td>
+          <td class="${scls}">${x.sr!=null?((x.sr<1?'':'+')+(100*(x.sr-1)).toFixed(0)+'%'):'—'}</td>
+          <td class="muted" style="font-size:11.5px">${x.lo!=null?x.lo.toFixed(0)+' - '+x.hi.toFixed(0):'—'}</td>
+          <td>${spark(x.hist)}</td></tr>`;
     }
     h+='</table></div>';
     return h;
