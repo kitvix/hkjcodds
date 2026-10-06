@@ -335,11 +335,13 @@ function searchSlotTop(){
   if(!top.length){el.innerHTML='<div class="muted">該時段冇下跌記錄（快照數：'+inSlot.length+'）</div>';return}
   el.innerHTML=`<div class="muted" style="margin-bottom:8px">時段：<b>${fmtT(SLOT.slot)}</b>　·　${poolName}　·　第 ${rn} 場　·　
       基準 ${base.hhmm.slice(0,2)}:${base.hhmm.slice(2)} → ${end.hhmm.slice(0,2)}:${end.hhmm.slice(2)}（${inSlot.length} 張快照）</div>
-    <div style="overflow-x:auto"><table><tr><th>#</th><th>${pool==='WIN'||pool==='PLA'?'馬名':'組合'}</th><th>時段開始</th><th>時段結束</th><th>跌幅</th></tr>
-    ${top.map((x,i)=>`<tr><td class="muted">${i+1}</td><td><b>${nmOf(x.k)}</b></td>
-      <td>${x.a.toFixed(1)}</td><td><b>${x.b.toFixed(1)}</b></td>
-      <td class="dn"><b>${x.ch.toFixed(1)}%</b></td></tr>`).join('')}
-    </table></div>`;
+    <div style="overflow-x:auto"><table style="table-layout:fixed;width:100%">
+      <colgroup><col style="width:44px"><col><col style="width:150px"><col style="width:100px"></colgroup>
+      <tr><th>#</th><th>${pool==='WIN'||pool==='PLA'?'馬名':'組合'}</th><th>賠率變化</th><th>跌幅</th></tr>
+      ${top.map((x,i)=>`<tr><td class="muted">${i+1}</td><td style="text-align:left"><b>${nmOf(x.k)}</b></td>
+        <td>${x.a.toFixed(1)} → <b>${x.b.toFixed(1)}</b></td>
+        <td class="dn"><b>${x.ch.toFixed(1)}%</b></td></tr>`).join('')}
+    </table></div>`;;
 }
 // ── 💰 大額資金流入警示（新設計：用真實金額 + 流動性過濾 + 相對市場）──
 let FLOW={minAmt:80000, minPoolPct:40, minRel:2};
