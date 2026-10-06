@@ -124,12 +124,20 @@ function render(snaps,src){
   const ms=snaps.filter(x=>x.runs&&Object.keys(x.runs).length);
   const first=ms.length?ms[0]:snaps[0], last=ms.length?ms[ms.length-1]:snaps[snaps.length-1];
   const toMin=h=>Math.floor(+h/100)*60+(+h%100);
+  // 自適應缺漏偵測：用「中位間隔嘅 2.5 倍」做門檻（最少 8 分鐘）
+  const diffs=[];
+  for(let i=1;i<snaps.length;i++) diffs.push(toMin(snaps[i].hhmm)-toMin(snaps[i-1].hhmm));
+  const sorted=[...diffs].sort((a,b)=>a-b);
+  const med=sorted.length?sorted[Math.floor(sorted.length/2)]:3;
+  const THR=Math.max(8, Math.round(med*2.5));
   const gaps=[];
-  for(let i=1;i<snaps.length;i++){const d=toMin(snaps[i].hhmm)-toMin(snaps[i-1].hhmm); if(d>8) gaps.push(`${snaps[i-1].hhmm}→${snaps[i].hhmm}（${d}分）`)}
+  for(let i=1;i<snaps.length;i++){const d=diffs[i-1];
+    if(d>THR) gaps.push(`${snaps[i-1].hhmm}→${snaps[i].hhmm}（${d}分）`)}
   st.innerHTML=`<span class="badge">快照 ${snaps.length} 張</span>
     <span class="badge">${first.hhmm} → ${last.hhmm}</span>
     <span class="badge">賽日 ${first.date||'—'} ${first.venue||''}</span>
     <span class="badge ${gaps.length?'warn':'ok'}">${gaps.length?'⚠️ 缺漏：'+gaps.join('、'):'✅ 無明顯缺漏'}</span>
+    <span class="badge">間隔：中位 ${med} 分｜門檻 ${THR} 分</span>
     <div class="muted" style="margin-top:8px">來源：${src}</div>`;
   const sum=document.getElementById('summary'); sum.style.display='block';
   const rows=[];
