@@ -84,7 +84,8 @@ def main():
         date = None   # 由頁面自動偵測
     venue = sys.argv[2] if len(sys.argv) > 2 else ''
     nrace = int(sys.argv[3]) if len(sys.argv) > 3 else 11
-    compact = date.replace('/', '') if date else ''
+    compact = (date[6:10]+date[3:5]+date[0:2]) if date else ''   # 07/10/2026 → 20261007
+    os.makedirs('data/odds_snapshots', exist_ok=True)   # 先建立資料夾（即使冇賠率都唔會令 git add 失敗）
     now = datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=8)))  # 香港時間
     allodds, alltips, races, metas = {}, {}, {}, {}
     if date is None:
@@ -128,6 +129,41 @@ def main():
         with open(path, 'a', encoding='utf-8') as f:
             f.write(json.dumps(rec, ensure_ascii=False) + '\n')
         print('[%s] 已記錄 %d 匹／%d 場' % (now.strftime('%H:%M'), len(allodds), len(races)))
+    # ── 警示偵測：短時間內大幅變動 ──
+    try:
+        if prev and prev.get('odds'):
+            import datetime as _dt
+            def _mins(a, b):
+                return (int(b[:2])*60+int(b[2:])) - (int(a[:2])*60+int(a[2:]))
+            dt = _mins(prev.get('hhmm','0000'), rec['hhmm'])
+            if 0 < dt <= 15:
+                ov, nv = prev['odds'], allodds
+                keys = [k for k in nv if k in ov and ov[k] > 1]
+                if keys:
+                    def share(d, k):
+                        tot = sum(1/v for v in d.values() if v > 1)
+                        return (1/d[k])/tot if tot else 0
+                    tot0 = sum(1/ov[k] for k in keys); tot1 = sum(1/nv[k] for k in keys)
+                    al = []
+                    for k in keys:
+                        d0 = (1/ov[k])/tot0 if tot0 else 0
+                        d1 = (1/nv[k])/tot1 if tot1 else 0
+                        pay = d1 - d0                      # 彩池佔比變化
+                        if abs(pay) >= 0.03:               # 3% 彩池 = 大幅
+                            al.append({'race': int(k.split('|')[0]), 'horse': k.split('|')[1],
+                                       'from': ov[k], 'to': nv[k], 'pool_pct': round(100*pay, 2),
+                                       'mins': dt, 'hhmm': rec['hhmm']})
+                    if al:
+                        al.sort(key=lambda z: -abs(z['pool_pct']))
+                        os.makedirs('data/alerts', exist_ok=True)
+                        ap = 'data/alerts/%s.jsonl' % compact
+                        with open(ap, 'a', encoding='utf-8') as f:
+                            for a in al:
+                                f.write(json.dumps({**a, 'ts': rec['ts']}, ensure_ascii=False) + '\n')
+                        print('  ⚠️ 警示 %d 條：%s' % (len(al), ', '.join(
+                            'R%d %s %+.1f%%彩池' % (a['race'], a['horse'], a['pool_pct']) for a in al[:3])))
+    except Exception as e:
+        print('  警示偵測失敗：%s' % e)
     if prev and prev.get('odds'):
         mv = []
         for k, v in allodds.items():
