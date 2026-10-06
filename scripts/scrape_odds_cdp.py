@@ -24,12 +24,7 @@ def find_chrome():
         f = shutil.which(n)
         if f: return f
     return "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
-CHROME = os.environ.get('CHROME_BIN') or next(
-    (x for x in ['/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
-                 '/usr/bin/google-chrome', '/usr/bin/google-chrome-stable',
-                 '/usr/bin/chromium', '/usr/bin/chromium-browser',
-                 'google-chrome', 'chromium'] if x.startswith('/') and os.path.exists(x)),
-    'google-chrome')   # 雲端（Ubuntu）用 google-chrome，本機（macOS）用 Applications 路徑
+CHROME = find_chrome()
 UA = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0 Safari/537.36'
 
 def plain_ws(host, port, path):
