@@ -244,9 +244,21 @@ function searchSlotTop(){
   const ms=multiSnaps(), rn=SLOT.race, pool=SLOT.pool;
   const inSlot=ms.filter(x=>slotKeyOf(x)===SLOT.slot);
   if(!inSlot.length){el.innerHTML='<div class="muted">該時段冇快照</div>';return}
-  let base, end;
-  if(inSlot.length>=2){base=inSlot[0]; end=inSlot[inSlot.length-1];}
-  else{const i=ms.indexOf(inSlot[0]); base=i>0?ms[i-1]:inSlot[0]; end=inSlot[0];}
+  // 有效值計數器（早期快照有 999 佔位值，會令比較失敗）
+  const validCount=(sn)=>{
+    const r=sn.runs&&sn.runs[rn]; if(!r) return 0;
+    if(pool==='WIN'||pool==='PLA') return (r.runners||[]).filter(x=>{const v=pool==='WIN'?x.win:x.place;return v>1.5&&v<900}).length;
+    return Object.values(r[pool==='QIN'?'qin':'qpl']||{}).filter(v=>v>1.5&&v<900).length;
+  };
+  let end=null, base=null;
+  for(let i=inSlot.length-1;i>=0;i--){ if(validCount(inSlot[i])>=6){end=inSlot[i];break} }
+  if(!end){const e=ms.indexOf(inSlot[inSlot.length-1]); end=e>=0?ms[e]:inSlot[inSlot.length-1];}
+  const eIdx=ms.indexOf(end);
+  // 基準：同段內最早有足夠數據嘅快照；冇就往前搵
+  for(let i=0;i<inSlot.length;i++){ if(ms.indexOf(inSlot[i])<eIdx && validCount(inSlot[i])>=6){base=inSlot[i];break} }
+  if(!base){ for(let i=eIdx-1;i>=0;i--){ if(validCount(ms[i])>=6){base=ms[i];break} } }
+  if(!base) base=end;
+  if(base===end){el.innerHTML='<div class="muted">該時段只有一張有效快照，冇足夠數據比較</div>';return}
   const get=(s,k)=>{
     const r=s.runs&&s.runs[rn]; if(!r) return null;
     if(pool==='WIN'||pool==='PLA'){
