@@ -71,6 +71,7 @@ async function loadRemote(){
   const bust=Date.now();
   const urls=[
     {u:`https://raw.githubusercontent.com/${repo}/main/${path}`, kind:'raw', l:'GitHub raw'},
+    {u:`https://hkjctrigger.kitvix.workers.dev/data/${date}.jsonl`, kind:'raw', l:'Cloudflare Worker'},
     {u:`https://api.github.com/repos/${repo}/contents/${path}?ref=main&t=${bust}`, kind:'api', l:'GitHub API'},
     {u:`https://cdn.jsdelivr.net/gh/${repo}@main/${path}?t=${bust}`, kind:'raw', l:'jsDelivr'},
   ];
