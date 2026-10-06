@@ -168,6 +168,16 @@ function render(snaps,src){
 }
 // ── 真實彩池（由 runs 取得）──
 function multiSnaps(){return SNAPS.filter(s=>s.runs&&Object.keys(s.runs).length)}
+// 真實場次（排除幻影：馬名組合與其他場次相同）
+function realRaces(ms){
+  const bad=new Set();
+  ms.forEach(s=>{const seen={};
+    for(const rn of Object.keys(s.runs)){
+      const sig=(s.runs[rn].runners||[]).map(x=>x.name||'').sort().join('|');
+      if(seen[sig]){bad.add(rn);} else seen[sig]=rn;
+    }});
+  return [...new Set(ms.flatMap(s=>Object.keys(s.runs)))].filter(r=>!bad.has(r)).sort((a,b)=>+a-+b);
+}
 function realPool(race){
   const m=multiSnaps(); if(!m.length) return null;
   const r=m[m.length-1].runs[race]; return (r&&r.pools&&r.pools.WIN)?r.pools.WIN:null;
@@ -222,7 +232,7 @@ function renderSlotTop(){
   const ms=multiSnaps(); if(!ms.length){box.style.display='none';return}
   box.style.display='block';
   const slots=[...new Set(ms.map(slotKeyOf))].sort();
-  const races=[...new Set(ms.flatMap(s=>Object.keys(s.runs)))].sort((a,b)=>+a-+b);
+  const races=realRaces(ms);
   if(!SLOT.race||!races.includes(SLOT.race)) SLOT.race=races[0];
   if(!SLOT.slot||!slots.includes(SLOT.slot)) SLOT.slot=slots[slots.length-1];
   const sel=(id,opts,val,lab)=>`<select id="${id}" onchange="SLOT.${id}=this.value;searchSlotTop()" style="background:#0e1830;color:#e8eefc;border:1px solid #243453;border-radius:8px;padding:7px 10px;font-size:13.5px">
@@ -370,7 +380,7 @@ function renderMatrix(){
   const ms=multiSnaps();
   if(!ms.length){box.style.display='none';return}
   box.style.display='block';
-  const races=[...new Set(ms.flatMap(s=>Object.keys(s.runs)))].sort((a,b)=>+a-+b);
+  const races=realRaces(ms);
   if(!SERIES.race||!races.includes(SERIES.race)) SERIES.race=races[0];
   const r=ms[ms.length-1].runs[SERIES.race];
   const nums=(r.runners||[]).map(x=>+x.no).sort((a,b)=>a-b);
