@@ -1,7 +1,7 @@
 name: HKJC 賠率快照
 on:
   schedule:
-    - cron: '*/5 * * * *'
+    - cron: '*/5 * * * *'      # 每 5 分鐘
   workflow_dispatch:
 permissions:
   contents: write
@@ -11,23 +11,29 @@ concurrency:
 jobs:
   capture:
     runs-on: ubuntu-latest
-    timeout-minutes: 8
+    timeout-minutes: 9
     env:
-      RACE_DATE: 'auto'
-      VENUE: 'auto'
+      RACE_DATE: 'auto'         # 獨贏/貼士：自動偵測賽日
+      RACE_DATE_ISO: '2026-10-07'  # 多彩池（Chrome）：賽日 YYYY-MM-DD
+      VENUE: 'HV'
       RACES: '11'
     steps:
       - uses: actions/checkout@v4
         with: { fetch-depth: 1 }
       - uses: actions/setup-python@v5
         with: { python-version: '3.11' }
-      - name: 抓取賠率
+      - name: 確認 Chrome
+        run: |
+          google-chrome --version || chromium --version || echo "⚠️ 冇 Chrome（多彩池會跳過）"
+      - name: 抓取獨贏賠率 + 貼士指數
         run: |
           if [ "$RACE_DATE" = "auto" ]; then
-            python3 scripts/cloud_snapshot.py "" "$VENUE" "$RACES"
+            python3 scripts/cloud_snapshot.py "" "$VENUE" "$RACES" || true
           else
-            python3 scripts/cloud_snapshot.py "$RACE_DATE" "$VENUE" "$RACES"
+            python3 scripts/cloud_snapshot.py "$RACE_DATE" "$VENUE" "$RACES" || true
           fi
+      - name: 抓取多彩池（獨贏/位置/連贏/位置Q）
+        run: python3 scripts/scrape_odds_cdp.py "$RACE_DATE_ISO" "$VENUE" "$RACES" || true
       - name: 提交快照
         run: |
           mkdir -p data/odds_snapshots
