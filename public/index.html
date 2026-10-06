@@ -50,16 +50,38 @@ async function loadDemo(){
   try{const r=await fetch('sample.jsonl'); render(parseJSONL(await r.text()),'示範資料（模擬快照）')}
   catch(e){alert('載入示範失敗')}
 }
+function note(html){const st=document.getElementById('status');st.style.display='block';st.innerHTML=html;
+  ['summary','moves','races'].forEach(id=>document.getElementById(id).style.display='none');}
 async function loadRemote(){
   const repo=document.getElementById('repo').value.trim();
   const date=document.getElementById('date').value.trim();
-  if(!repo||!date) return alert('請填寫 repo 同賽日');
+  if(!repo||!date){note('<b>⚠️ 請填寫 GitHub repo 同賽日</b>');return}
   const urls=[`https://raw.githubusercontent.com/${repo}/main/data/odds_snapshots/${date}.jsonl`,
               `https://raw.githubusercontent.com/${repo}/master/data/odds_snapshots/${date}.jsonl`];
+  let last=null, netErr=false;
   for(const u of urls){
-    try{const r=await fetch(u); if(r.ok){render(parseJSONL(await r.text()),u); return}}catch(e){}
+    try{
+      const r=await fetch(u);
+      if(r.ok){render(parseJSONL(await r.text()),u);return}
+      last=r.status;
+    }catch(e){netErr=true}
   }
-  alert('載入失敗（repo 私密／分支唔係 main／賽日未有資料）');
+  const t=new Date().toLocaleTimeString('zh-HK');
+  if(last===404){
+    note(`<span class="badge warn">⏳ 尚未有快照資料</span>
+      <div style="margin-top:9px;line-height:1.75">
+      賽日 <b>${date}</b> 未有快照檔（<code>data/odds_snapshots/${date}.jsonl</code>）<br>
+      <span class="muted">正常原因：① 賠率未公佈 ② 未到賽日 ③ GitHub Actions 未開始抓取<br>
+      賠率通常喺賽日早上或下午公佈，之後每 5 分鐘會自動 commit 一張快照。</span></div>
+      <div class="muted" style="margin-top:9px">檢查時間：${t}　·　repo：${repo}</div>`);
+  }else{
+    note(`<span class="badge" style="background:#3a1a1a;color:#ff9f92">❌ 載入失敗</span>
+      <div style="margin-top:9px;line-height:1.75">
+      ${netErr?'網絡請求失敗（可能被瀏覽器擴充／網絡阻擋）':'HTTP '+last}<br>
+      <span class="muted">檢查：① repo 名是否 <code>owner/repo</code> ② repo 是否 <b>Public</b>
+      ③ 分支是否 <code>main</code> ④ 檔案是否存在</span></div>
+      <div class="muted" style="margin-top:9px">檢查時間：${t}　·　repo：${repo}</div>`);
+  }
 }
 function loadLocal(inp){
   const f=inp.files[0]; if(!f) return;
@@ -105,5 +127,13 @@ function render(snaps,src){
       return `<tr><td>R${rn}</td><td>${w.nm}</td><td>${fmt(w.a)}</td><td>${fmt(w.b)}</td>
       <td class="${w.r<1?'dn':'up'}">${w.r<1?'':'+'}${(100*(w.r-1)).toFixed(0)}%</td></tr>`}).join('')+'</table>';
 }
-if(new URLSearchParams(location.search).get('demo')) loadDemo();
+// 支援分享連結：?repo=owner/repo&date=20261007 （自動載入）
+(function(){
+  const q=new URLSearchParams(location.search);
+  if(q.get('demo')){loadDemo();return}
+  const r=q.get('repo'),d=q.get('date');
+  if(r) document.getElementById('repo').value=r;
+  if(d) document.getElementById('date').value=d;
+  if(r&&d) loadRemote();
+})();
 </script></div></body></html>
