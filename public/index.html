@@ -436,10 +436,10 @@ function renderMatrix(){
 let PH={race:'',pool:'qin',no:''};
 function renderPairHorse(){
   const box=document.getElementById('pairhorse');
-  const ms=multiSnaps().filter(x=>{const r=x.runs&&x.runs[Object.keys(x.runs)[0]];return true});
+  const ms=multiSnaps();
   if(!ms.length){box.style.display='none';return}
   box.style.display='block';
-  const races=[...new Set(ms.flatMap(x=>Object.keys(x.runs)))].sort((a,b)=>+a-+b);
+  const races=realRaces(ms);
   if(!PH.race||!races.includes(PH.race)) PH.race=races[races.length-1];
   // 號碼清單（由該場 runners）
   const last=ms[ms.length-1].runs[PH.race]||{};
@@ -729,7 +729,9 @@ function renderSeries(){
   const box=document.getElementById('series'); box.style.display='block';
   const snaps=SNAPS; if(!snaps.length) return;
   // 收集所有場次
-  const races=[...new Set(snaps.flatMap(s=>Object.keys(s.odds||{}).map(k=>k.split('|')[0])))].sort((a,b)=>(a==='-'?99:+a)-(b==='-'?99:+b));
+  const _bad=new Set();
+  multiSnaps().forEach(x=>{const seen={};for(const rn of Object.keys(x.runs)){const sig=(x.runs[rn].runners||[]).map(y=>y.name||'').sort().join('|');if(seen[sig])_bad.add(rn);else seen[sig]=rn}});
+  const races=[...new Set(snaps.flatMap(s=>Object.keys(s.odds||{}).map(k=>k.split('|')[0])))].filter(r=>!_bad.has(r)).sort((a,b)=>(a==='-'?99:+a)-(b==='-'?99:+b));
   if(!SERIES.race||!races.includes(SERIES.race)) SERIES.race=races[0];
   // 時間軸（最多 12 個點，超過就等距抽樣）
   let times=snaps.map(s=>s.hhmm);
