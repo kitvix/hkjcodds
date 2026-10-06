@@ -323,28 +323,34 @@ function renderPairSeries(){
     if(pp&&pp.WIN&&pp.WIN>=finalPool*0.4){baseIdx=i;break}}
   const first=valid[baseIdx], last=valid[valid.length-1];
   const toMin=h=>Math.floor(+h/100)*60+(+h%100);
-  const tLast=toMin(last.hhmm);
-  // 最近 30 分鐘內嘅快照（短期變幅）
-  const recent=valid.filter(x=>tLast-toMin(x.hhmm)<=30 && tLast-toMin(x.hhmm)>=0);
-  const firstShort=recent.length>1?recent[0]:null;
+  // 為每個標的搵「全期最大 30 分鐘跌幅窗口」
+  const bestDrop=(hist,times)=>{
+    let best=null;
+    for(let i=0;i<hist.length;i++){
+      for(let j=i+1;j<hist.length;j++){
+        const dt=toMin(times[j])-toMin(times[i]);
+        if(dt<=0||dt>35) continue;
+        const a=hist[i], b=hist[j];
+        if(!a||!b||a<1.5||b<1.5) continue;
+        const ch=b/a-1;
+        if(!best||ch<best.ch) best={ch,from:a,to:b,t1:times[i],t2:times[j],dt};
+      }
+    }
+    return best;
+  };
   const build=pool=>{
-    const o1=first.runs[rn][pool]||{}, o2=last.runs[rn][pool]||{};
-    const os=firstShort?(firstShort.runs[rn][pool]||{}):null;
+    const o2=last.runs[rn][pool]||{};
     const rows=[];
     for(const k in o2){
-      const a=o1[k], b=o2[k];
-      if(!a||!b||a<1.5||b<1.5||a>999||b>999) continue;
-      // 歷史序列（最低/最高）
-      const hist=valid.map(x=>(x.runs[rn][pool]||{})[k]).filter(v=>v>1.5&&v<999);
-      const lo=hist.length?Math.min(...hist):null, hi=hist.length?Math.max(...hist):null;
-      const sc=os?os[k]:null;
-      rows.push({k,a,b,r:b/a, sc, sr:(sc&&sc>1.5)?b/sc:null, lo, hi, hist});
+      const hist=valid.map(x=>(x.runs[rn][pool]||{})[k]).map(v=>(v>1.5&&v<999)?v:null);
+      const times=valid.map(x=>x.hhmm);
+      const a=hist.find(v=>v!=null), b=hist[hist.length-1];
+      if(!a||!b||a<1.5||b<1.5) continue;
+      const bd=bestDrop(hist,times);
+      const lo=Math.min(...hist.filter(v=>v!=null)), hi=Math.max(...hist.filter(v=>v!=null));
+      rows.push({k,a,b,r:b/a,lo,hi,hist:hist.filter(v=>v!=null),bd});
     }
-    // 相對市場：該組合變幅 − 全部組合中位數變幅
-    const med=(()=>{const arr=rows.map(x=>x.r-1).sort((a,b)=>a-b);
-      return arr.length?arr[Math.floor(arr.length/2)]:0})();
-    rows.forEach(x=>{x.rel=(x.r-1)-med});
-    return rows.sort((x,y)=>x.rel-y.rel);
+    return rows.sort((x,y)=>(x.bd?x.bd.ch:0)-(y.bd?y.bd.ch:0));
   };
   const mk=(title,rows)=>{
     if(!rows.length) return '';
@@ -369,8 +375,8 @@ function renderPairSeries(){
       h+=`<tr><td><b>${i}-${j}</b></td><td>${nameOf(rn,i)} × ${nameOf(rn,j)}</td>
           <td>${x.a.toFixed(1)}</td><td><b>${x.b.toFixed(1)}</b></td>
           <td class="${cls}"><b>${x.r<1?'':'+'}${(100*(x.r-1)).toFixed(0)}%</b></td>
-          <td class="${x.rel<0?'dn':'up'}"><b>${x.rel<0?'':'+'}${(100*x.rel).toFixed(0)}%</b></td>
-          <td class="${scls}">${x.sr!=null?((x.sr<1?'':'+')+(100*(x.sr-1)).toFixed(0)+'%'):'—'}</td>
+          <td class="dn"><b>${x.bd?(100*x.bd.ch).toFixed(0)+'%':'—'}</b></td>
+          <td class="muted" style="font-size:11.5px">${x.bd?(x.bd.t1.slice(0,2)+':'+x.bd.t1.slice(2)+' → '+x.bd.t2.slice(0,2)+':'+x.bd.t2.slice(2)+'（'+x.bd.from.toFixed(1)+'→'+x.bd.to.toFixed(1)+'）'):'—'}</td>
           <td class="muted" style="font-size:11.5px">${x.lo!=null?x.lo.toFixed(0)+' - '+x.hi.toFixed(0):'—'}</td>
           <td>${spark(x.hist)}</td></tr>`;
     }
