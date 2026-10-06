@@ -36,13 +36,16 @@ jobs:
         run: python3 scripts/scrape_odds_cdp.py "$RACE_DATE_ISO" "$VENUE" "$RACES" || true
       - name: 提交快照
         run: |
-          mkdir -p data/odds_snapshots
-          git config user.name  "odds-bot"
-          git config user.email "odds-bot@users.noreply.github.com"
-          git add -A data/odds_snapshots || true
-          if git diff --staged --quiet; then
-            echo "無新快照"
-          else
-            git commit -m "odds $(date -u +'%Y-%m-%dT%H:%MZ')"
-            git push
-          fi
+            mkdir -p data/odds_snapshots
+            git config user.name  "odds-bot"
+            git config user.email "odds-bot@users.noreply.github.com"
+            git add -A data/odds_snapshots || true
+            if git diff --staged --quiet; then
+              echo "無新快照"
+            else
+              git commit -m "odds $(date -u +'%Y-%m-%dT%H:%MZ')"
+              for i in 1 2 3; do
+                git pull --rebase --autostash origin main && git push && break
+                echo "push 失敗，第 $i 次重試"; sleep 5
+              done
+            fi
