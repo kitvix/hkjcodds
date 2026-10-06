@@ -86,6 +86,14 @@ async function loadRemote(){
           const j=await r.json();
           txt=decodeURIComponent(escape(atob((j.content||'').replace(/\n/g,''))));
         } else { txt=await r.text(); }
+        // 驗證：必須係真正快照（有 odds 或 runs 嘅記錄 ≥5 筆）
+        let valid=false;
+        if(txt && txt.trim()){
+          const probe=parseJSONL(txt);
+          const okRec=probe.filter(r=>r && (r.odds || r.runs));
+          valid = okRec.length>=5;
+          if(!valid){ tried.push(x.l+'：回應唔似快照資料（略過）'); continue; }
+        }
         if(txt && txt.trim()){
           const parsed=parseJSONL(txt);
           render(parsed, x.l+' · '+repo+'/'+path);
