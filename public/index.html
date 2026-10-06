@@ -366,8 +366,6 @@ function renderPairSeries(){
     const seen=new Set(); const show=[];
     [...rows.slice(0,8),...rows.slice(-8).reverse()].forEach(x=>{if(!seen.has(x.k)){seen.add(x.k);show.push(x)}});
     let h=`<div style="margin-top:14px"><b>${title}</b> <span class="muted">（${rows.length} 組，${first.hhmm} → ${last.hhmm}）</span></div>`;
-    const t1=firstShort?(firstShort.hhmm.slice(0,2)+':'+firstShort.hhmm.slice(2)):'—';
-    const t2=last.hhmm.slice(0,2)+':'+last.hhmm.slice(2);
     h+='<div style="overflow-x:auto"><table style="margin-top:6px"><tr><th>組合</th><th>馬名</th><th>開盤</th><th>最新</th><th>變幅<br><span style="font-weight:400;font-size:10.5px">(vs 基準)</span></th>'+
       '<th>相對市場<br><span style="font-weight:400;font-size:10.5px">(扣除大市)</span></th>'+
       '<th>近 30 分<br><span style="font-weight:400;font-size:10.5px">('+t1+' → '+t2+')</span></th>'+
