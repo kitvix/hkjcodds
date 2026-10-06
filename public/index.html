@@ -454,8 +454,14 @@ function renderPairHorse(){
   const valid=ms.filter(x=>{const r=x.runs[rn]; return r && Object.keys(r[pk]||{}).length>=40});
   if(valid.length<2){el.innerHTML='<div class="muted">該場冇足夠組合數據（需要 ≥2 張有效快照）</div>';return}
   // 組合清單（與 me 相關）
-  const pairs=[];
-  nums.forEach(n=>{ if(n===me) return; pairs.push(me<n?me+'-'+n:n+'-'+me); });
+  // 由最後快照嘅實際 key 過濾（確保唔會漏）
+  const lastPK=(valid[valid.length-1].runs[rn]||{})[pk]||{};
+  const pairs=Object.keys(lastPK).filter(k=>{
+      const p2=k.split('-'); return +p2[0]===me||+p2[1]===me;
+    }).sort((x,y)=>{
+      const a=x.split('-').map(Number), b=y.split('-').map(Number);
+      const ax=a[0]===me?a[1]:a[0], bx=b[0]===me?b[1]:b[0]; return ax-bx;
+    });
   // 時間軸抽樣
   const times=valid.map(x=>x.hhmm);
   let pick=times.map((_,i)=>i);
@@ -465,20 +471,25 @@ function renderPairHorse(){
   const poolOf=sn=>((sn.runs[rn]||{}).pools||{})[pk==='qin'?'QIN':'QPL']||null;
   const shareOf=(sn,k)=>{ const d=(sn.runs[rn]||{})[pk]||{}; const tot=Object.values(d).filter(v=>v>1.5&&v<900).reduce((s,v)=>s+1/v,0);
     const v=d[k]; return (v>1.5&&v<900&&tot)?(1/v)/tot:null; };
-  const base=valid[0], lastS=valid[valid.length-1];
-  const p0=poolOf(base), p1=poolOf(lastS);
+  const lastS=valid[valid.length-1];
+  const p1=poolOf(lastS);
   let html='<div style="overflow-x:auto"><table><tr><th>組合</th><th>馬名</th>';
   tsel.slice(1,-1).forEach(t=>{html+=`<th>${t.slice(0,2)}:${t.slice(2)}</th>`});
   html+='<th>最新</th><th>變幅</th><th>實際投注額</th><th>淨流入</th><th>走勢</th></tr>';
   let any=false;
   for(const k of pairs){
-    const v0=(base.runs[rn][pk]||{})[k], v1=(lastS.runs[rn][pk]||{})[k];
-    if(!v0||!v1) continue; any=true;
+    // 每個組合各自搵「最早有有效值」嘅快照做基準（早期快照未必齊全）
+    let bi=-1, baseS=null, v0=null;
+    for(let i=0;i<valid.length;i++){const v=(valid[i].runs[rn][pk]||{})[k];
+      if(v>1.5&&v<900){bi=i;baseS=valid[i];v0=v;break}}
+    const v1=(lastS.runs[rn][pk]||{})[k];
+    if(!baseS||!v1||v1<=1.5||v1>=900) continue; any=true;
     const r=v1/v0;
     const hist=valid.map(x=>((x.runs[rn][pk]||{})[k])).filter(v=>v>1.5&&v<900);
     const sh1=shareOf(lastS,k), amt=(p1&&sh1)?p1*0.825*sh1:null;
-    const sh0=shareOf(base,k);
+    const sh0=shareOf(baseS,k);
     const net=(p1&&sh1&&sh0)?p1*0.825*(sh1-sh0):null;
+    const p0=poolOf(baseS);
     const spark=(arr)=>{ if(!arr||arr.length<2) return '';
       const mn=Math.min(...arr),mx=Math.max(...arr),W=90,Hh=22,kk=arr.length;
       const pts=arr.map((v,t)=>{const px=kk>1?t/(kk-1)*W:0;const py=mx>mn?Hh-(v-mn)/(mx-mn)*Hh:Hh/2;return px.toFixed(1)+','+py.toFixed(1)}).join(' ');
@@ -500,7 +511,7 @@ function renderPairHorse(){
   html+='</table></div>';
   if(!any){el.innerHTML='<div class="muted">該馬號冇有效組合數據</div>';return}
   el.innerHTML=`<div class="muted" style="margin-bottom:8px">${pool==='qin'?'連贏':'位置Q'} 第 ${rn} 場 · 馬號 ${me} ${nameOf(rn,me)} · ${valid.length} 張快照
-    ${p0&&p1?'· 彩池 $'+Math.round(p0).toLocaleString()+' → $'+Math.round(p1).toLocaleString():''}</div>`+html;
+    ${p1?'· 連贏彩池 $'+Math.round(p1).toLocaleString():''}</div>`+html;
 }
 // ── 📈 連贏/位置Q 走勢（組合層面）──
 function renderPairSeries(){
