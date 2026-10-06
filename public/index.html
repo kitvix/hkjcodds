@@ -257,6 +257,11 @@ function renderAlerts(){
   const box=document.getElementById('alerts');
   const snaps=SNAPS; if(snaps.length<2) return;
   const TH=adaptThreshold(); const THR_PCT=TH.pct/100;
+  const ctrl=`<div style="margin-top:10px;padding:9px 12px;background:#0e1830;border-radius:9px;line-height:2.1">
+    <b>🎚️ 門檻設定</b>　自適應百分位：<input type="range" min="80" max="99.9" step="0.1" value="${PCTILE}" oninput="PCTILE=+this.value;renderAlerts()" style="width:180px;vertical-align:middle"> <b>${PCTILE}%</b>
+    <span class="muted">（${TH.n} 個觀測 → 門檻 ${TH.pct.toFixed(2)}%${TH.fallback?'（樣本不足，用預設 8%）':''}）</span><br>
+    金額下限：<input type="range" min="0" max="500000" step="10000" value="${MINAMT}" oninput="MINAMT=+this.value;renderAlerts()" style="width:180px;vertical-align:middle"> <b>HK$${MINAMT.toLocaleString()}</b>
+  </div>`;
   const toMin=h=>Math.floor(+h/100)*60+(+h%100);
   const alerts=[];
   for(let i=1;i<snaps.length;i++){
@@ -280,7 +285,8 @@ function renderAlerts(){
     }
   }
   box.style.display='block';
-  if(!alerts.length){box.innerHTML='<b>⚠️ 大幅變動警示</b><div class="muted" style="margin-top:8px">未偵測到 ≥8% 彩池 且 ≥HK$50K 嘅短時間變動（≤15 分鐘）</div>';return}
+  if(!alerts.length){box.innerHTML='<b>⚠️ 大幅變動警示</b>'+ctrl+
+    '<div class="muted" style="margin-top:8px">未偵測到 ≥'+TH.pct.toFixed(2)+'% 彩池 且 ≥HK$'+MINAMT.toLocaleString()+' 嘅短時間變動（≤15 分鐘）</div>';return}
   alerts.sort((x,y)=>Math.abs(y.pct)-Math.abs(x.pct));
   const inflow=alerts.filter(a=>a.pct>0), outflow=alerts.filter(a=>a.pct<0);
   let h=`<b>⚠️ 大幅變動警示</b> <span class="muted">（≥${TH.pct.toFixed(2)}% 彩池 ＋ ≥HK$${MINAMT.toLocaleString()}，相鄰快照 ≤15 分鐘）｜共 ${alerts.length} 條：流入 ${inflow.length}、流出 ${outflow.length}</span>${ctrl}`;
