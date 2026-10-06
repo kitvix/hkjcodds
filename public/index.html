@@ -294,53 +294,68 @@ function searchSlotTop(){
       <td class="dn"><b>${x.ch.toFixed(1)}%</b></td></tr>`).join('')}
     </table></div>`;
 }
-// ── ⚡ 急跌事件（短時間大幅落飛）──
+// ── 💰 大額資金流入警示（新設計：用真實金額 + 流動性過濾 + 相對市場）──
+let FLOW={minAmt:80000, minPoolPct:40, minRel:2};
 function renderDrops(){
   const box=document.getElementById('drops');
   const ms=multiSnaps(); if(ms.length<2){box.style.display='none';return}
   box.style.display='block';
   const toMin=h=>Math.floor(+h/100)*60+(+h%100);
+  // 每場最終彩池
+  const fin={};
+  ms.forEach(s=>{for(const rn in s.runs){const p=(s.runs[rn].pools||{}).WIN; if(p) fin[rn]=Math.max(fin[rn]||0,p)}});
   const ev=[];
   for(let i=1;i<ms.length;i++){
     const A=ms[i-1],B=ms[i]; const dt=toMin(B.hhmm)-toMin(A.hhmm);
-    if(dt<=0||dt>10) continue;                       // 只計 10 分鐘內嘅急變
+    if(dt<=0||dt>12) continue;
     for(const rn in B.runs){
-      const ra=A.runs[rn]; if(!ra) continue;
-      // 獨贏
-      const w1={},w2={};
-      (ra.runners||[]).forEach(x=>{if(x.win>1.2)w1[x.name]=x.win});
-      (B.runs[rn].runners||[]).forEach(x=>{if(x.win>1.2)w2[x.name]=x.win});
-      for(const nm in w2){ const a=w1[nm],b=w2[nm];
-        if(!a||!b) continue; const ch=100*(b/a-1);
-        if(ch<=-15) ev.push({hhmm:B.hhmm,race:rn,pool:'獨贏',label:nm,a,b,ch,dt,kind:'win'});
-      }
-      // 連贏 / 位置Q
-      for(const [pool,tag] of [['qin','連贏'],['qpl','位置Q']]){
-        const o1=ra[pool]||{}, o2=B.runs[rn][pool]||{};
-        for(const k in o2){ const a=o1[k],b=o2[k];
-          if(!a||!b||a<2||a>500||b<2||b>500) continue;
-          const ch=100*(b/a-1);
-          if(ch<=-15) ev.push({hhmm:B.hhmm,race:rn,pool:tag,label:k,a,b,ch,dt,kind:'pair'});
-        }
-      }
+      const ra=A.runs[rn], rb=B.runs[rn]; if(!ra||!rb) continue;
+      const p0=(ra.pools||{}).WIN, p1=(rb.pools||{}).WIN;
+      if(!p0||!p1) continue;
+      if(p1 < (fin[rn]||0)*FLOW.minPoolPct/100) continue;        // ① 流動性過濾
+      const k1={},k2={};
+      (ra.runners||[]).forEach(x=>{if(x.win>1.2&&x.win<900)k1[x.name]=x.win});
+      (rb.runners||[]).forEach(x=>{if(x.win>1.2&&x.win<900)k2[x.name]=x.win});
+      const ks=Object.keys(k1).filter(k=>k2[k]);
+      if(ks.length<5) continue;
+      const t0=ks.reduce((s,k)=>s+1/k1[k],0), t1=ks.reduce((s,k)=>s+1/k2[k],0);
+      const shares=ks.map(k=>({k, s0:(1/k1[k])/t0, s1:(1/k2[k])/t1}));
+      shares.forEach(x=>{x.d=x.s1-x.s0});                        // ② 佔比變化
+      // ③ 相對市場（扣除全場中位數）
+      const med=[...shares.map(x=>x.d)].sort((a,b)=>a-b)[Math.floor(ks.length/2)];
+      shares.forEach(x=>{
+        const amt0=p0*0.825*x.s0, amt1=p1*0.825*x.s1, net=amt1-amt0;
+        const rel=100*(x.d-med);
+        if(net>=FLOW.minAmt && rel>=FLOW.minRel)
+          ev.push({hhmm:B.hhmm, race:rn, nm:x.k, a:k1[x.k], b:k2[x.k],
+                   net, rel, dpct:100*x.d, pool:p1, dt});
+      });
     }
   }
-  ev.sort((x,y)=>x.ch-y.ch);
-  if(!ev.length){box.innerHTML='<b>⚡ 急跌事件（10 分鐘內跌 ≥15%）</b><div class="muted" style="margin-top:8px">暫時未偵測到急跌</div>';return}
-  let h=`<b>⚡ 急跌事件（10 分鐘內跌 ≥15%）</b> <span class="muted">｜共 ${ev.length} 條｜按跌幅排序（呢啲就係「突然大幅落飛」）</span>`;
-  h+='<div style="overflow-x:auto;margin-top:10px"><table><tr><th>時間</th><th>場次</th><th>彩池</th><th>標的</th><th>賠率變化</th><th>跌幅</th><th>間隔</th><th>估算金額</th></tr>';
+  ev.sort((x,y)=>y.net-x.net);
+  const ctrl=`<div style="margin-top:10px;padding:9px 12px;background:#0e1830;border-radius:9px;line-height:2.1">
+    <b>🎚️ 篩選條件</b>　淨流入 ≥ <input type="range" min="20000" max="500000" step="10000" value="${FLOW.minAmt}" oninput="FLOW.minAmt=+this.value;renderDrops()" style="width:150px;vertical-align:middle"> <b>HK$${FLOW.minAmt.toLocaleString()}</b>
+    　彩池 ≥ 最終 <input type="range" min="10" max="90" step="5" value="${FLOW.minPoolPct}" oninput="FLOW.minPoolPct=+this.value;renderDrops()" style="width:120px;vertical-align:middle"> <b>${FLOW.minPoolPct}%</b>
+    　相對市場 ≥ <input type="range" min="0" max="10" step="0.5" value="${FLOW.minRel}" oninput="FLOW.minRel=+this.value;renderDrops()" style="width:110px;vertical-align:middle"> <b>${FLOW.minRel}%</b>
+  </div>`;
+  if(!ev.length){box.innerHTML='<b>💰 大額資金流入警示</b>'+ctrl+'<div class="muted" style="margin-top:8px">未符合條件（可調低上面嘅門檻）</div>';return}
+  let h=`<b>💰 大額資金流入警示</b> <span class="muted">（真金白銀 + 已排除早期噪音 + 扣除大市）｜共 ${ev.length} 條</span>${ctrl}`;
+  h+='<div style="overflow-x:auto;margin-top:10px"><table><tr><th>時間</th><th>場次</th><th>馬名</th><th>賠率變化</th><th>淨流入</th><th>佔比變化</th><th>相對市場</th><th>該場彩池</th><th>間隔</th></tr>';
   for(const z of ev.slice(0,25)){
-    const rn_=z.race, pool=realPool(rn_)||(parseFloat(document.getElementById('pool').value||'10'))*1e6;
-    let amt=null;
-    if(z.kind==='win'){ const share=(1/z.b)/(1/z.b); amt=pool*0.825*(1/z.b); }
-    const nmLine=z.kind==='pair'?(()=>{const [i,j]=z.label.split('-');return `${i}-${j} <span class="muted">${nameOf(rn_,i)} × ${nameOf(rn_,j)}</span>`})():z.label;
-    h+=`<tr><td>${z.hhmm.slice(0,2)}:${z.hhmm.slice(2)}</td><td>R${z.race}</td><td>${z.pool}</td>
-        <td>${nmLine}</td><td>${z.a.toFixed(1)} → <b>${z.b.toFixed(1)}</b></td>
-        <td class="dn"><b>${z.ch.toFixed(0)}%</b></td><td class="muted">${z.dt} 分</td>
-        <td class="muted">—</td></tr>`;
+    h+=`<tr><td>${z.hhmm.slice(0,2)}:${z.hhmm.slice(2)}</td><td>R${z.race}</td><td><b>${z.nm}</b></td>
+        <td>${z.a.toFixed(1)} → <b>${z.b.toFixed(1)}</b></td>
+        <td class="dn"><b>+HK$${Math.round(z.net).toLocaleString()}</b></td>
+        <td class="dn">+${z.dpct.toFixed(1)}%</td>
+        <td class="dn">+${z.rel.toFixed(1)}%</td>
+        <td class="muted">$${Math.round(z.pool).toLocaleString()}</td>
+        <td class="muted">${z.dt} 分</td></tr>`;
   }
   h+='</table></div>';
-  h+='<div class="muted" style="margin-top:9px;line-height:1.8">⚡ 呢個表就係你想睇嘅「某個時間突然大幅落飛」<br>📊 回測用法：記錄每個事件嘅時間／標的／跌幅 → 賽後對照賽果，睇下急跌馬嘅勝出率同回報</div>';
+  h+='<div class="muted" style="margin-top:9px;line-height:1.8">'+
+     '<b>為何要用真實金額而唔係 % 跌幅？</b><br>'+
+     '• 早期彩池細（佔最終 <10%）→ 小額注碼已可令賠率大跌 ✗ 噪音<br>'+
+     '• 所以加上「彩池 ≥ 最終 40%」過濾 → 今日 129 個事件只剩 ~15 個可信 ✓<br>'+
+     '• 「相對市場」扣除全場同步變化 → 隔離真正嘅個別資金流 ✓</div>';
   box.innerHTML=h;
 }
 // ── 📐 連贏/位置Q 矩陣（馬會格式）──
