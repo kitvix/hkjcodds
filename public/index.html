@@ -223,9 +223,9 @@ function renderSlotTop(){
   const races=[...new Set(ms.flatMap(s=>Object.keys(s.runs)))].sort((a,b)=>+a-+b);
   if(!SLOT.race||!races.includes(SLOT.race)) SLOT.race=races[0];
   if(!SLOT.slot||!slots.includes(SLOT.slot)) SLOT.slot=slots[slots.length-1];
-  const sel=(id,opts,val,lab)=>`<select id="${id}" onchange="SLOT.${id}=this.value" style="background:#0e1830;color:#e8eefc;border:1px solid #243453;border-radius:8px;padding:7px 10px;font-size:13.5px">
+  const sel=(id,opts,val,lab)=>`<select id="${id}" onchange="SLOT.${id}=this.value;searchSlotTop()" style="background:#0e1830;color:#e8eefc;border:1px solid #243453;border-radius:8px;padding:7px 10px;font-size:13.5px">
     ${opts.map(o=>`<option value="${o.v}" ${o.v===val?'selected':''}>${o.l}</option>`).join('')}</select>`;
-  let h=`<b>⏰ 時段 Top 10 跌幅</b> <span class="muted">（揀場次 + 彩池 + 時段 → 睇該時段跌得最勁嘅 10 匹／組合）</span>
+  let h=`<b>⏰ 時段 Top 10 跌幅</b> <span class="muted">（三個都揀好即自動更新 ✓）</span>
     <div style="margin-top:12px;display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap">
       <div><label style="display:block;font-size:12px;color:#93a7c9;margin-bottom:4px">① 場次</label>
         ${sel('race',races.map(r=>({v:r,l:'第 '+r+' 場'})),SLOT.race)}</div>
@@ -233,7 +233,6 @@ function renderSlotTop(){
         ${sel('pool',[{v:'WIN',l:'獨贏'},{v:'PLA',l:'位置'},{v:'QIN',l:'連贏'},{v:'QPL',l:'位置Q'}],SLOT.pool)}</div>
       <div><label style="display:block;font-size:12px;color:#93a7c9;margin-bottom:4px">③ 時段</label>
         ${sel('slot',slots.map(x=>({v:x,l:x.replace('-','/').replace('-','/')+' - '+String(+x.slice(11,13)+1).padStart(2,'0')+':00'})),SLOT.slot)}</div>
-      <button onclick="searchSlotTop()" style="background:#1d3a63;border:1px solid #243453;color:#e8eefc;border-radius:8px;padding:8px 20px;font-size:14px;cursor:pointer;font-weight:600">🔍 搜索</button>
     </div>
     <div id="slotResult" style="margin-top:12px"></div>`;
   box.innerHTML=h;
