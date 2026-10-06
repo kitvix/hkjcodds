@@ -129,7 +129,7 @@ function render(snaps,src){
   for(let i=1;i<snaps.length;i++) diffs.push(toMin(snaps[i].hhmm)-toMin(snaps[i-1].hhmm));
   const sortedDiffs=[...diffs].sort((a,b)=>a-b);
   const med=sortedDiffs.length?sortedDiffs[Math.floor(sortedDiffs.length/2)]:3;
-  const THR=Math.max(8, Math.round(med*2.5));
+  const THR=20;   // 固定 20 分鐘（抓取節奏 5-15 分鐘；同一次執行會寫 2 張）
   const gaps=[];
   for(let i=1;i<snaps.length;i++){const d=diffs[i-1];
     if(d>THR) gaps.push(`${snaps[i-1].hhmm}→${snaps[i].hhmm}（${d}分）`)}
