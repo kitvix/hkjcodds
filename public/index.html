@@ -64,32 +64,41 @@ async function loadRemote(){
   const repo=document.getElementById('repo').value.trim();
   const date=document.getElementById('date').value.trim();
   if(!repo||!date){note('<b>⚠️ 請填寫 GitHub repo 同賽日</b>');return}
-  const urls=[`https://raw.githubusercontent.com/${repo}/main/data/odds_snapshots/${date}.jsonl`,
-              `https://raw.githubusercontent.com/${repo}/master/data/odds_snapshots/${date}.jsonl`];
-  let last=null, netErr=false;
-  for(const u of urls){
+  const path=`data/odds_snapshots/${date}.jsonl`;
+  // 多重來源（raw 可能被擴充／防火牆阻擋）
+  const urls=[
+    {u:`https://raw.githubusercontent.com/${repo}/main/${path}`, kind:'raw', l:'GitHub raw'},
+    {u:`https://cdn.jsdelivr.net/gh/${repo}@main/${path}`, kind:'raw', l:'jsDelivr CDN'},
+    {u:`https://fastly.jsdelivr.net/gh/${repo}@main/${path}`, kind:'raw', l:'jsDelivr (Fastly)'},
+    {u:`https://api.github.com/repos/${repo}/contents/${path}?ref=main`, kind:'api', l:'GitHub API'},
+  ];
+  const tried=[];
+  for(const x of urls){
     try{
-      const r=await fetch(u);
-      if(r.ok){render(parseJSONL(await r.text()),u);return}
-      last=r.status;
-    }catch(e){netErr=true}
+      const r=await fetch(x.u,{cache:'no-store'});
+      tried.push(x.l+'：HTTP '+r.status);
+      if(r.ok){
+        let txt;
+        if(x.kind==='api'){
+          const j=await r.json();
+          txt=decodeURIComponent(escape(atob((j.content||'').replace(/\n/g,''))));
+        } else { txt=await r.text(); }
+        if(txt && txt.trim()){render(parseJSONL(txt), x.l+' · '+repo+'/'+path); return}
+      }
+    }catch(e){ tried.push(x.l+'：'+e.message) }
   }
   const t=new Date().toLocaleTimeString('zh-HK');
-  if(last===404){
-    note(`<span class="badge warn">⏳ 尚未有快照資料</span>
-      <div style="margin-top:9px;line-height:1.75">
-      賽日 <b>${date}</b> 未有快照檔（<code>data/odds_snapshots/${date}.jsonl</code>）<br>
-      <span class="muted">正常原因：① 賠率未公佈 ② 未到賽日 ③ GitHub Actions 未開始抓取<br>
-      賠率通常喺賽日早上或下午公佈，之後每 5 分鐘會自動 commit 一張快照。</span></div>
-      <div class="muted" style="margin-top:9px">檢查時間：${t}　·　repo：${repo}</div>`);
-  }else{
-    note(`<span class="badge" style="background:#3a1a1a;color:#ff9f92">❌ 載入失敗</span>
-      <div style="margin-top:9px;line-height:1.75">
-      ${netErr?'網絡請求失敗（可能被瀏覽器擴充／網絡阻擋）':'HTTP '+last}<br>
-      <span class="muted">檢查：① repo 名是否 <code>owner/repo</code> ② repo 是否 <b>Public</b>
-      ③ 分支是否 <code>main</code> ④ 檔案是否存在</span></div>
-      <div class="muted" style="margin-top:9px">檢查時間：${t}　·　repo：${repo}</div>`);
-  }
+  note(`<span class="badge" style="background:#3a1a1a;color:#ff9f92">❌ 全部來源都載入失敗</span>
+    <div style="margin-top:9px;line-height:1.9">
+    <b>試過嘅來源：</b><br><span class="muted" style="font-size:12.5px">${tried.join('<br>')}</span><br><br>
+    <b>可能原因：</b>① 瀏覽器擴充（uBlock／AdGuard／私隱工具）阻擋 GitHub<br>
+    ② 公司／學校防火牆　③ GitHub API 限流<br><br>
+    <b>✅ 最快解決：用「選擇檔案」載入本機副本</b>
+    <div style="margin-top:6px;padding:8px 10px;background:#0e1830;border-radius:8px;font-size:12.5px">
+    檔案位置：<code>hkjc_db/data/odds_snapshots/${date}.jsonl</code><br>
+    或我幫你準備嘅副本：<code>20261007_賠率快照.jsonl</code>（工作區根目錄）
+    </div></div>
+    <div class="muted" style="margin-top:9px">檢查時間：${t}　·　repo：${repo}</div>`);
 }
 function loadLocal(inp){
   const f=inp.files[0]; if(!f) return;
