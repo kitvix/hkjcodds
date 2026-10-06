@@ -73,7 +73,8 @@ async function loadRemote(){
     {u:`https://raw.githubusercontent.com/${repo}/main/${path}`, kind:'raw', l:'GitHub raw'},
     {u:`https://hkjctrigger.kitvix.workers.dev/data/${date}.jsonl`, kind:'raw', l:'Cloudflare Worker'},
     {u:`https://api.github.com/repos/${repo}/contents/${path}?ref=main&t=${bust}`, kind:'api', l:'GitHub API'},
-    {u:`https://cdn.jsdelivr.net/gh/${repo}@main/${path}?t=${bust}`, kind:'raw', l:'jsDelivr'},
+    {u:`https://raw.githack.com/${repo}/main/${path}?t=${bust}`, kind:'raw', l:'githack'},
+    {u:`https://cdn.jsdelivr.net/gh/${repo}@main/${path}`, kind:'raw', l:'jsDelivr'},
   ];
   const tried=[];
   for(const x of urls){
