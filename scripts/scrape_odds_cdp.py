@@ -178,7 +178,7 @@ def main():
     only = sys.argv[4] if len(sys.argv) > 4 else None      # 指定單場（快速模式）
     c = CDP()
     try:
-        allruns = {}; miss = 0; prev_sig = None
+        allruns = {}; miss = 0; prev_sig = None; first_win = None
         rng = [int(only)] if only else list(range(1, nrace + 1))
         for n in rng:
             c.goto('https://bet.hkjc.com/ch/racing/wp/%s/%s/%d' % (date, venue, n))
@@ -198,9 +198,14 @@ def main():
             pools.update({k: v for k, v in mat.get('pools', {}).items() if k in ('QIN', 'QPL')})
             # 幻影場次偵測：內容與上一場完全相同 → 代表已到尾
             sig = tuple(sorted(r['no'] for r in rows)) + tuple(sorted((r['name'] or '') for r in rows))
+            pools_now = d.get('pools', {})
             if prev_sig is not None and sig == prev_sig:
                 print('  R%-2d 內容與上一場相同（幻影）→ 停止' % n)
                 break
+            if n > 1 and first_win is not None and pools_now.get('WIN') == first_win:
+                print('  R%-2d 彩池與 R1 相同（幻影）→ 停止' % n)
+                break
+            if n == 1: first_win = pools_now.get('WIN')
             prev_sig = sig
             allruns[str(n)] = {'runners': rows, 'qin': mat.get('qin', {}), 'qpl': mat.get('qpl', {}),
                                'pools': pools, 'totals': d.get('totals', {})}
@@ -210,7 +215,8 @@ def main():
         if not allruns:
             print('未取得任何賠率（可能未公佈）'); return
         import datetime
-        now = datetime.datetime.now()
+        HKT = datetime.timezone(datetime.timedelta(hours=8))   # 香港時間（雲端為 UTC）
+        now = datetime.datetime.now(HKT)
         rec = {'ts': now.isoformat(timespec='seconds'), 'hhmm': now.strftime('%H%M'),
                'date': date, 'venue': venue, 'runs': allruns}
         # 同時產生獨贏 odds（兼容現有 viewer）
