@@ -178,7 +178,7 @@ def main():
     only = sys.argv[4] if len(sys.argv) > 4 else None      # 指定單場（快速模式）
     c = CDP()
     try:
-        allruns = {}; miss = 0
+        allruns = {}; miss = 0; prev_sig = None
         rng = [int(only)] if only else list(range(1, nrace + 1))
         for n in rng:
             c.goto('https://bet.hkjc.com/ch/racing/wp/%s/%s/%d' % (date, venue, n))
@@ -196,6 +196,12 @@ def main():
             mat = json.loads(m) if m else {}
             pools = dict(d.get('pools', {}))
             pools.update({k: v for k, v in mat.get('pools', {}).items() if k in ('QIN', 'QPL')})
+            # 幻影場次偵測：內容與上一場完全相同 → 代表已到尾
+            sig = tuple(sorted(r['no'] for r in rows)) + tuple(sorted((r['name'] or '') for r in rows))
+            if prev_sig is not None and sig == prev_sig:
+                print('  R%-2d 內容與上一場相同（幻影）→ 停止' % n)
+                break
+            prev_sig = sig
             allruns[str(n)] = {'runners': rows, 'qin': mat.get('qin', {}), 'qpl': mat.get('qpl', {}),
                                'pools': pools, 'totals': d.get('totals', {})}
             print('  R%-2d %2d 匹｜連贏 %d、位置Q %d｜彩池 %s' %
