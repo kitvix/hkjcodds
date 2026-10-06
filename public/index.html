@@ -209,30 +209,37 @@ function renderMatrix(){
   const sel=`<select onchange="SERIES.race=this.value;renderSeries();renderMatrix();renderPairSeries();renderPairAlerts()" style="background:#0e1830;color:#e8eefc;border:1px solid #243453;border-radius:8px;padding:6px 10px">
     ${races.map(x=>`<option value="${x}" ${x===SERIES.race?'selected':''}>第 ${x} 場</option>`).join('')}</select>`;
   const nmap={}; (r.runners||[]).forEach(x=>nmap[+x.no]=x.name);
+  const n=nums.length, half=Math.floor(n/2);   // 馬會做法：左右各顯示一半
   const mk=(title,data)=>{
-    const lo=Math.min(...Object.values(data).filter(v=>v>1.5));
+    const vals=Object.values(data).filter(v=>v>1.5);
+    const lo=vals.length?Math.min(...vals):0;
     let h=`<div style="margin-top:14px"><b>${title}</b></div>`;
-    // 馬名對照
-    h+='<div class="muted" style="margin:5px 0;font-size:12px">'+nums.map(n=>`<b>${n}</b> ${nmap[n]||''}`).join('　')+'</div>';
-    h+='<div style="overflow-x:auto"><table style="border-collapse:collapse;font-size:12.5px;margin-top:4px">';
-    // 表頭：第一格空 + 直欄馬號
-    h+='<tr><th style="background:#1b2f52;color:#cfe0ff;padding:5px 8px;border:1px solid #243453;text-align:left;min-width:92px">橫\直</th>';
-    nums.forEach(j=>{h+=`<th style="background:#1b2f52;color:#cfe0ff;padding:5px 8px;border:1px solid #243453;text-align:center;min-width:46px">${j}</th>`});
+    h+='<div class="muted" style="margin:5px 0;font-size:12px">'+nums.map(x=>`<b>${x}</b> ${nmap[x]||''}`).join('　')+'</div>';
+    h+='<div style="overflow-x:auto"><table style="border-collapse:collapse;font-size:13px;margin-top:4px">';
+    // 表頭：左邊空白 + 直欄馬號（由 2 開始）+ 右邊空白
+    h+='<tr><td style="background:#1b2f52;border:1px solid #243453;min-width:34px"></td>';
+    h+=`<td style="background:#1b2f52;color:#cfe0ff;padding:5px 9px;border:1px solid #243453;font-weight:700">${title}</td>`;
+    nums.filter(j=>j!==nums[0]).forEach(j=>{h+=`<td style="background:#1b2f52;color:#cfe0ff;padding:5px 9px;border:1px solid #243453;text-align:center;min-width:44px">${j}</td>`});
     h+='</tr>';
-    nums.forEach(i=>{
+    // 資料列：只在對角線以上顯示（馬會三角排列）
+    nums.slice(0,n-1).forEach(i=>{
       h+='<tr>';
-      // 左邊：馬號 + 馬名
-      h+=`<td style="background:#1b2f52;color:#cfe0ff;padding:5px 8px;border:1px solid #243453;white-space:nowrap"><b>${i}</b> ${nmap[i]||''}</td>`;
-      nums.forEach(j=>{
-        if(j<i){h+='<td style="border:1px solid #16233c;background:#0b1220"></td>';return}
-        if(i===j){h+='<td style="background:#0b1220;border:1px solid #243453"></td>';return}
+      // 左邊格：空白（第1行）／對角標記（i+half）
+      const leftMark=(i===nums[0])?'':(i+half);
+      h+=`<td style="background:#16233c;color:#7f93b5;border:1px solid #243453;text-align:center;font-weight:600">${leftMark}</td>`;
+      // 標題欄（馬名）
+      h+=`<td style="background:#1b2f52;color:#cfe0ff;padding:5px 9px;border:1px solid #243453;white-space:nowrap"><b>${i}</b> ${nmap[i]||''}</td>`;
+      nums.filter(j=>j!==nums[0]).forEach(j=>{
+        if(j<i){h+='<td style="border:1px solid #16233c;background:#0e1830"></td>';return}
+        if(i===j){h+=`<td style="background:#1b2f52;color:#cfe0ff;border:1px solid #243453;text-align:center;font-weight:600">${i}</td>`;return}
         const v=data[i+'-'+j]; if(!v){h+='<td style="border:1px solid #16233c"></td>';return}
-        const hot=(v===lo);
-        const cls=v<=10?'style="border:1px solid #16233c;text-align:center;background:#c0392b;color:#fff;font-weight:700"'
-                       :(v<=25?'style="border:1px solid #16233c;text-align:center;background:#e67e22;color:#fff;font-weight:600"'
-                              :'style="border:1px solid #16233c;text-align:center"');
-        h+=`<td ${cls}>${v.toFixed(v<10?1:0)}</td>`;
+        const st=(v<=10)?'background:#c0392b;color:#fff;font-weight:700;text-align:center'
+               :(v<=25)?'background:#e67e22;color:#fff;font-weight:600;text-align:center'
+                       :'text-align:center';
+        h+=`<td style="border:1px solid #16233c;padding:5px 9px;${st}">${v.toFixed(v<10?1:0)}</td>`;
       });
+      // 右邊：該行馬號
+      h+=`<td style="background:#16233c;color:#7f93b5;border:1px solid #243453;text-align:center;font-weight:600">${i}</td>`;
       h+='</tr>';
     });
     h+='</table></div>';
@@ -242,9 +249,9 @@ function renderMatrix(){
   h+=mk('連贏', r.qin||{});
   h+=mk('位置Q', r.qpl||{});
   h+='<div class="muted" style="margin-top:10px;line-height:1.8">'+
-     '📖 <b>睇法</b>：左邊一行 = 第一匹馬（馬號＋馬名）｜上面一欄 = 第二匹馬（馬號）｜交叉格 = 該組合賠率<br>'+
+     '📖 <b>馬會排列</b>：上面一欄 = 第二匹馬（馬號）｜右邊 = 該行馬號（第一匹馬）｜左邊深色格 = 對角標記（馬號+7）<br>'+
      '🔴 紅格 = 賠率 ≤10（大熱組合）｜🟠 橙格 = 10-25（熱門組合）｜空白 = 未報價<br>'+
-     '例：第一行（1 獎星）× 第 4 欄 = 組合「1-4」賠率</div>';
+     '對角線深色格 = 該行馬號（馬會做法）｜例：第 1 行（1 獎星）× 第 4 欄 = 組合「1-4」= 8.5</div>';
   box.innerHTML=h;
 }
 // ── 📈 連贏/位置Q 走勢（組合層面）──
