@@ -31,6 +31,7 @@ th{color:var(--dim);font-weight:600;font-size:12.5px}
       <input id="repo" style="width:100%" placeholder="例如 kit/hkjc-odds" value="">
     </div>
     <div><label>賽日</label><input id="date" placeholder="20261007" value=""></div>
+    <div><label>獨贏彩池估算（百萬）</label><input id="pool" style="width:110px" value="10" onchange="if(SNAPS.length)renderSeries(),renderAlerts()"></div>
     <div><button onclick="loadRemote()">載入雲端快照</button></div>
     <div><label>或本機檔案</label><input type="file" id="file" onchange="loadLocal(this)"></div>
     <div><button onclick="loadDemo()">載入示範資料</button></div>
@@ -42,6 +43,10 @@ th{color:var(--dim);font-weight:600;font-size:12.5px}
 <div id="summary" class="panel" style="display:none"></div>
 <div id="moves" class="panel" style="display:none"></div>
 <div id="races" class="panel" style="display:none"></div>
+<div id="pools" class="panel" style="display:none"></div>
+<div id="alerts" class="panel" style="display:none"></div>
+<div id="pairalerts" class="panel" style="display:none"></div>
+<div id="series" class="panel" style="display:none"></div>
 
 <script>
 let SNAPS=[];
@@ -51,7 +56,7 @@ async function loadDemo(){
   catch(e){alert('載入示範失敗')}
 }
 function note(html){const st=document.getElementById('status');st.style.display='block';st.innerHTML=html;
-  ['summary','moves','races'].forEach(id=>document.getElementById(id).style.display='none');}
+  ['summary','moves','races','series','alerts','pools','pairalerts'].forEach(id=>document.getElementById(id).style.display='none');}
 async function loadRemote(){
   const repo=document.getElementById('repo').value.trim();
   const date=document.getElementById('date').value.trim();
@@ -88,11 +93,22 @@ function loadLocal(inp){
   const rd=new FileReader(); rd.onload=()=>render(parseJSONL(rd.result),f.name); rd.readAsText(f,'utf-8');
 }
 function fmt(v){return v==null?'—':v.toFixed(1)}
+function formatMoney(v){
+  if(v==null) return '—';
+  const a=Math.abs(v);
+  if(a>=1e6) return (v/1e6).toFixed(2)+'M';
+  if(a>=1e3) return (v/1e3).toFixed(0)+'K';
+  return v.toFixed(0);
+}
 function render(snaps,src){
+  // 清洗：賠率 ≥900（999 佔位）視為無效
+  snaps.forEach(s=>{ for(const k in (s.odds||{})){ if(!(s.odds[k]>0&&s.odds[k]<900)) delete s.odds[k]; }
+    if(s.runs) for(const rn in s.runs){ (s.runs[rn].runners||[]).forEach(r=>{ if(!(r.win>0&&r.win<900)) r.win=null; if(!(r.place>0&&r.place<900)) r.place=null; }); } });
   SNAPS=snaps;
   const st=document.getElementById('status'); st.style.display='block';
   if(!snaps.length){st.innerHTML='<b>冇快照資料</b>';return}
-  const first=snaps[0], last=snaps[snaps.length-1];
+  const ms=snaps.filter(x=>x.runs&&Object.keys(x.runs).length);
+  const first=ms.length?ms[0]:snaps[0], last=ms.length?ms[ms.length-1]:snaps[snaps.length-1];
   const toMin=h=>Math.floor(+h/100)*60+(+h%100);
   const gaps=[];
   for(let i=1;i<snaps.length;i++){const d=toMin(snaps[i].hhmm)-toMin(snaps[i-1].hhmm); if(d>8) gaps.push(`${snaps[i-1].hhmm}→${snaps[i].hhmm}（${d}分）`)}
@@ -103,7 +119,7 @@ function render(snaps,src){
     <div class="muted" style="margin-top:8px">來源：${src}</div>`;
   const sum=document.getElementById('summary'); sum.style.display='block';
   const rows=[];
-  for(const k in first.odds){const a=first.odds[k], b=last.odds[k]; if(a&&b) rows.push({k,a,b,r:b/a})}
+  for(const k in first.odds){const a=first.odds[k], b=last.odds[k]; if(a>0&&a<900&&b>0&&b<900) rows.push({k,a,b,r:b/a})}
   const buckets=[['大幅落飛 ≥30%',r=>r<=0.70],['落飛 15-30%',r=>r>0.70&&r<=0.85],['平穩',r=>r>0.85&&r<=1.15],
                  ['退飛 15-40%',r=>r>1.15&&r<=1.40],['大幅退飛 >40%',r=>r>1.40]];
   sum.innerHTML=`<b>走勢分組（${first.hhmm} → ${last.hhmm}）</b><table><tr><th>類別</th><th>匹數</th><th>平均變幅</th></tr>`+
@@ -126,11 +142,210 @@ function render(snaps,src){
       const w=byrace[rn].sort((x,y)=>x.r-y.r)[0];
       return `<tr><td>R${rn}</td><td>${w.nm}</td><td>${fmt(w.a)}</td><td>${fmt(w.b)}</td>
       <td class="${w.r<1?'dn':'up'}">${w.r<1?'':'+'}${(100*(w.r-1)).toFixed(0)}%</td></tr>`}).join('')+'</table>';
+  renderSeries();
+  renderAlerts();
+  renderPools();
+  renderPairAlerts();
+}
+// ── 真實彩池（由 runs 取得）──
+function multiSnaps(){return SNAPS.filter(s=>s.runs&&Object.keys(s.runs).length)}
+function realPool(race){
+  const m=multiSnaps(); if(!m.length) return null;
+  const r=m[m.length-1].runs[race]; return (r&&r.pools&&r.pools.WIN)?r.pools.WIN:null;
+}
+function poolVal(race,p){
+  const m=multiSnaps(); if(!m.length) return null;
+  const r=m[m.length-1].runs[race]; return (r&&r.pools&&r.pools[p]!=null)?r.pools[p]:null;
+}
+// ── 💰 彩池總額面板 ──
+function renderPools(){
+  const box=document.getElementById('pools');
+  const ms=multiSnaps();
+  if(!ms.length){box.style.display='none';return}
+  box.style.display='block';
+  const a=ms[0], b=ms[ms.length-1];
+  const races=Object.keys(b.runs).sort((x,y)=>+x-+y);
+  const g=(race,p)=>{const v1=(a.runs[race]&&a.runs[race].pools||{})[p], v2=(b.runs[race].pools||{})[p];
+    if(v1==null||v2==null||!v1) return ''; const ch=100*(v2/v1-1);
+    return `<span class="muted" style="font-size:11px"> (${ch>0?'+':''}${ch.toFixed(0)}%)</span>`};
+  let h=`<b>💰 彩池總額（真實投注金額）</b> <span class="muted">｜資料來源：${b.hhmm} 快照｜首次 ${a.hhmm}</span>`;
+  h+='<div style="overflow-x:auto;margin-top:10px"><table><tr><th>場次</th><th>獨贏</th><th>位置</th><th>連贏</th><th>位置Q</th><th>單T</th><th>單場總額</th><th>所有彩池</th></tr>';
+  let tW=0,tA=0;
+  for(const rn of races){
+    const r=b.runs[rn], pl=r.pools||{}, tt=r.totals||{};
+    tW+=pl.WIN||0; tA+=tt.all||0;
+    const f=v=>v==null?'<span class="muted">—</span>':'$'+v.toLocaleString();
+    h+=`<tr><td>R${rn}</td><td>${f(pl.WIN)}${g(rn,'WIN')}</td><td>${f(pl.PLA)}</td>
+        <td>${f(pl.QIN)}</td><td>${f(pl.QPL)}</td><td>${f(pl.TCE)}</td>
+        <td>${f(tt.single)}</td><td><b>${f(tt.all)}</b></td></tr>`;
+  }
+  h+=`<tr style="border-top:2px solid #243453"><td><b>合計</b></td><td><b>$${tW.toLocaleString()}</b></td><td colspan="4"></td><td></td><td><b>$${tA.toLocaleString()}</b></td></tr>`;
+  h+='</table></div>';
+  h+='<div class="muted" style="margin-top:9px;line-height:1.8">'+
+     '<b>實際投注額 = 彩池總額 × 82.5% ÷ 賠率</b>（同注同派）｜括號 = 由首次快照到現在嘅增長<br>'+
+     '⚠️ 賽前彩池會由幾萬蚊增長到幾百萬，所以「淨流入」用真實彩池計算最準</div>';
+  box.innerHTML=h;
+}
+// ── 🔀 連贏/位置Q 大幅變動 ──
+function renderPairAlerts(){
+  const box=document.getElementById('pairalerts');
+  const ms=multiSnaps();
+  if(ms.length<2){box.style.display='none';return}
+  box.style.display='block';
+  const toMin=h=>Math.floor(+h/100)*60+(+h%100);
+  const hits=[];
+  for(let i=1;i<ms.length;i++){
+    const A=ms[i-1],B=ms[i]; const dt=toMin(B.hhmm)-toMin(A.hhmm);
+    if(dt<=0||dt>20) continue;
+    for(const rn in B.runs){
+      const ra=A.runs[rn]; if(!ra) continue;
+      for(const pool of ['qin','qpl']){
+        const o1=ra[pool]||{}, o2=B.runs[rn][pool]||{};
+        for(const k in o2){
+          const v1=o1[k], v2=o2[k];
+          if(!v1||!v2) continue;
+          if(v1<1.5||v1>300||v2<1.5||v2>300) continue;      // 合理性範圍
+          const ch=100*(v2/v1-1);
+          if(ch<-60||ch>150) continue;                       // 排除明顯解析錯誤
+          if(Math.abs(ch)>=20) hits.push({hhmm:B.hhmm,race:rn,pool:pool==='qin'?'連贏':'位置Q',k,v1,v2,ch,dt});
+        }
+      }
+    }
+  }
+  if(!hits.length){box.innerHTML='<b>🔀 連贏／位置Q 大幅變動</b><div class="muted" style="margin-top:8px">未偵測到組合賠率變動 ≥20%（≤20 分鐘）</div>';return}
+  hits.sort((x,y)=>Math.abs(y.ch)-Math.abs(x.ch));
+  let h=`<b>🔀 連贏／位置Q 大幅變動</b> <span class="muted">（組合賠率變化 ≥20%（1.5-300 範圍內），相鄰快照 ≤20 分鐘）｜共 ${hits.length} 條</span>`;
+  h+='<div style="overflow-x:auto;margin-top:10px"><table><tr><th>時間</th><th>場次</th><th>彩池</th><th>組合</th><th>賠率</th><th>變幅</th><th>間隔</th></tr>';
+  for(const z of hits.slice(0,20)){
+    const cls=z.ch<0?'dn':'up';
+    h+=`<tr><td>${z.hhmm.slice(0,2)}:${z.hhmm.slice(2)}</td><td>R${z.race}</td><td>${z.pool}</td>
+        <td><b>${z.k}</b></td><td>${z.v1.toFixed(1)} → <b>${z.v2.toFixed(1)}</b></td>
+        <td class="${cls}"><b>${z.ch>0?'+':''}${z.ch.toFixed(0)}%</b></td><td class="muted">${z.dt} 分</td></tr>`;
+  }
+  h+='</table></div><div class="muted" style="margin-top:9px">🟢 賠率下跌 = 資金流入該組合｜🔴 上升 = 資金流出</div>';
+  box.innerHTML=h;
+}
+// ── 大幅變動警示（≥3% 彩池，相鄰快照 ≤15 分鐘）──
+function renderAlerts(){
+  const box=document.getElementById('alerts');
+  const snaps=SNAPS; if(snaps.length<2) return;
+  const toMin=h=>Math.floor(+h/100)*60+(+h%100);
+  const alerts=[];
+  for(let i=1;i<snaps.length;i++){
+    const a=snaps[i-1], b=snaps[i];
+    const dt=toMin(b.hhmm)-toMin(a.hhmm);
+    if(dt<=0||dt>15) continue;
+    const ov=a.odds||{}, nv=b.odds||{};
+    const keys=Object.keys(nv).filter(k=>ov[k]>1);
+    if(!keys.length) continue;
+    const t0=keys.reduce((s,k)=>s+1/ov[k],0), t1=keys.reduce((s,k)=>s+1/nv[k],0);
+    for(const k of keys){
+      const p0=(1/ov[k])/t0, p1=(1/nv[k])/t1, d=p1-p0;
+      const rn=k.split('|')[0];
+      if(Math.abs(d)>=0.03){
+        const pool=realPool(rn)||(parseFloat(document.getElementById('pool').value||'10'))*1e6;
+        alerts.push({hhmm:b.hhmm,race:rn,nm:k.split('|')[1],
+                     from:ov[k],to:nv[k],pct:100*d,amt:pool*0.825*d,mins:dt,real:!!realPool(rn)});
+      }
+    }
+  }
+  box.style.display='block';
+  if(!alerts.length){box.innerHTML='<b>⚠️ 大幅變動警示</b><div class="muted" style="margin-top:8px">未偵測到 ≥3% 彩池嘅短時間變動（≤15 分鐘）</div>';return}
+  alerts.sort((x,y)=>Math.abs(y.pct)-Math.abs(x.pct));
+  const inflow=alerts.filter(a=>a.pct>0), outflow=alerts.filter(a=>a.pct<0);
+  let h=`<b>⚠️ 大幅變動警示</b> <span class="muted">（≥3% 彩池，相鄰快照 ≤15 分鐘）｜共 ${alerts.length} 條：流入 ${inflow.length}、流出 ${outflow.length}</span>`;
+  h+='<div style="overflow-x:auto;margin-top:10px"><table><tr><th>時間</th><th>場次</th><th>馬名</th><th>賠率</th><th>彩池佔比變化</th><th>估算金額</th><th>間隔</th></tr>';
+  for(const a of alerts.slice(0,25)){
+    const cls=a.pct>0?'dn':'up';
+    const col=a.pct>0?'🟢 流入':'🔴 流出';
+    h+=`<tr><td>${a.hhmm.slice(0,2)}:${a.hhmm.slice(2)}</td><td>R${a.race}</td><td><b>${a.nm}</b></td>
+        <td>${a.from.toFixed(1)} → <b>${a.to.toFixed(1)}</b></td>
+        <td class="${cls}"><b>${col} ${a.pct>0?'+':''}${a.pct.toFixed(1)}%</b></td>
+        <td class="${cls}">${a.amt>0?'+':''}${formatMoney(a.amt)}${a.real?'':'<span class="muted" style="font-size:10px">*</span>'}</td>
+        <td class="muted">${a.mins} 分</td></tr>`;
+  }
+  h+='</table></div>';
+  h+='<div class="muted" style="margin-top:9px;line-height:1.8">'+
+     '🟢 <b>流入</b> = 有新資金買入該馬（賠率下跌）｜🔴 流出 = 相對失去彩池佔比（賠率上升）<br>'+
+     '※ 同注同派下：全部馬嘅佔比加起來永遠 = 100%，所以一匹馬流入時，其他馬必然「流出」（機械性）<br>'+
+     '<b>真正訊號 = 流入</b>（新資金方向）；流出只反映相對變化<br>* = 用估算彩池（該場未有真實彩池數據）</div>';
+  box.innerHTML=h;
+}
+// ── 每匹馬賠率走勢（時間序列）──
+let SERIES={race:''};
+function renderSeries(){
+  const box=document.getElementById('series'); box.style.display='block';
+  const snaps=SNAPS; if(!snaps.length) return;
+  // 收集所有場次
+  const races=[...new Set(snaps.flatMap(s=>Object.keys(s.odds||{}).map(k=>k.split('|')[0])))].sort((a,b)=>(a==='-'?99:+a)-(b==='-'?99:+b));
+  if(!SERIES.race||!races.includes(SERIES.race)) SERIES.race=races[0];
+  // 時間軸（最多 12 個點，超過就等距抽樣）
+  let times=snaps.map(s=>s.hhmm);
+  let pick=times.map((_,i)=>i);
+  if(times.length>12){const step=(times.length-1)/11;pick=[];for(let i=0;i<12;i++)pick.push(Math.round(i*step));}
+  const tsel=pick.map(i=>times[i]);
+  // 每匹馬嘅走勢
+  const horses={};
+  snaps.forEach((s,si)=>{for(const k in (s.odds||{})){if(k.split('|')[0]!==SERIES.race)continue;
+    (horses[k]=horses[k]||{})[si]=s.odds[k]}});
+  const rows=Object.keys(horses).map(k=>{
+    const h=horses[k]; const idx=Object.keys(h).map(Number).sort((a,b)=>a-b);
+    const first=h[idx[0]], last=h[idx[idx.length-1]];
+    return {k,nm:k.split('|')[1],h,idx,first,last,r:last/first};
+  }).sort((a,b)=>a.r-b.r);
+  const spark=(h,idx)=>{
+    const vals=idx.map(i=>h[i]); const mn=Math.min(...vals),mx=Math.max(...vals);
+    const W=110,H=26,n=vals.length;
+    const pts=vals.map((v,i)=>{const x=n>1?i/(n-1)*W:0;const y=mx>mn?H-(v-mn)/(mx-mn)*H:H/2;return `${x.toFixed(1)},${y.toFixed(1)}`}).join(' ');
+    const col=vals[n-1]<vals[0]?'#8ff0c8':'#ff8f7a';
+    return `<svg width="${W}" height="${H}" style="vertical-align:middle"><polyline points="${pts}" fill="none" stroke="${col}" stroke-width="1.6"/></svg>`;
+  };
+  const realW=realPool(SERIES.race);
+  const POOL=realW||(parseFloat(document.getElementById('pool').value||'10'))*1e6;
+  const sel=`<select id="raceSel" onchange="SERIES.race=this.value;renderSeries()" style="background:#0e1830;color:#e8eefc;border:1px solid #243453;border-radius:8px;padding:6px 10px">
+    ${races.map(r=>`<option value="${r}" ${r===SERIES.race?'selected':''}>第 ${r} 場</option>`).join('')}</select>`;
+  let h='<b>每匹馬賠率走勢</b> '+sel+
+    ` <span class="muted" style="margin-left:8px">${rows.length} 匹｜${snaps.length} 個快照（顯示 ${tsel.length} 個時間點）</span>`;
+  h+='<div style="overflow-x:auto;margin-top:10px"><table><tr><th>馬名</th><th>開盤</th>'+
+     tsel.slice(1,-1).map(t=>`<th>${t.slice(0,2)}:${t.slice(2)}</th>`).join('')+
+     '<th>最新</th><th>變幅</th><th>實際投注額</th><th>淨流入</th><th>走勢</th></tr>';
+  for(const x of rows){
+    // 估算投注額（同注同派：金額 = 彩池 × 0.825 ÷ 賠率，再按場內歸一）
+    const share0=(1/x.first)/rows.reduce((t,y)=>t+1/y.first,0);
+    const share1=(1/x.last)/rows.reduce((t,y)=>t+1/y.last,0);
+    const amt0=POOL*0.825*share0, amt1=POOL*0.825*share1, net=amt1-amt0;
+    x._net=net; x._amt=amt1;
+    h+=`<tr><td><b>${x.nm}</b></td><td>${fmt(x.first)}</td>`;
+    let prev=x.first;
+    for(let i=1;i<tsel.length-1;i++){
+      const si=times.indexOf(tsel[i]); const v=x.h[si];
+      if(v==null){h+='<td class="muted">—</td>';continue}
+      const cls=v<prev?'dn':(v>prev?'up':'');
+      h+=`<td class="${cls}">${fmt(v)}</td>`; prev=v;
+    }
+    const cls=x.r<1?'dn':'up';
+    const ncls=net>0?'dn':(net<0?'up':'');
+    const big=Math.abs(net)>POOL*0.05?' style="font-weight:700"':'';
+    h+=`<td><b>${fmt(x.last)}</b></td><td class="${cls}"><b>${x.r<1?'':'+'}${(100*(x.r-1)).toFixed(0)}%</b></td>
+        <td${big}>${formatMoney(x._amt)}</td>
+        <td class="${ncls}"${big}>${net>0?'+':''}${formatMoney(net)}</td>
+        <td>${spark(x.h,x.idx)}</td></tr>`;
+  }
+  h+='</table></div>';
+  h+=`<div class="muted" style="margin-top:9px;line-height:1.8">`+
+     (realW?`彩池：<b>真實 $${realW.toLocaleString()}</b>（HKJC 公佈）｜`:`彩池：估算 $${(POOL/1e6).toFixed(1)}M（手動輸入）｜`)+
+     '綠字 = 賠率下跌（落飛）｜紅字 = 賠率上升（退飛）｜按「變幅」排序<br>'+
+     '<b>實際投注額</b>：同注同派機制下，金額 = 彩池 × 82.5% ÷ 賠率（場內歸一）<br>'+
+     '<b>淨流入</b>：由第一個快照到最新嘅差額（正數 = 新資金流入該馬）｜粗體 = 超過彩池 5%</div>';
+  box.innerHTML=h;
 }
 // 支援分享連結：?repo=owner/repo&date=20261007 （自動載入）
 (function(){
   const q=new URLSearchParams(location.search);
   if(q.get('demo')){loadDemo();return}
+  if(q.get('real')){fetch('real_sample.jsonl').then(r=>r.text()).then(t=>render(parseJSONL(t),'真實抓取資料'));return}
+  if(q.get('alert')){fetch('alert_sample.jsonl').then(r=>r.text()).then(t=>render(parseJSONL(t),'警示測試資料'));return}
+  if(q.get('rich')){fetch('rich_sample.jsonl').then(r=>r.text()).then(t=>render(parseJSONL(t),'豐富示範資料'));return}
   const r=q.get('repo'),d=q.get('date');
   if(r) document.getElementById('repo').value=r;
   if(d) document.getElementById('date').value=d;
