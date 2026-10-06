@@ -48,6 +48,7 @@ th{color:var(--dim);font-weight:600;font-size:12.5px}
 <div id="slottop" class="panel" style="display:none"></div>
 <div id="drops" class="panel" style="display:none"></div>
 <div id="matrix" class="panel" style="display:none"></div>
+<div id="pairhorse" class="panel" style="display:none"></div>
 <div id="pairseries" class="panel" style="display:none"></div>
 <div id="pairalerts" class="panel" style="display:none"></div>
 <div id="series" class="panel" style="display:none"></div>
@@ -60,7 +61,7 @@ async function loadDemo(){
   catch(e){alert('載入示範失敗')}
 }
 function note(html){const st=document.getElementById('status');st.style.display='block';st.innerHTML=html;
-  ['summary','moves','races','series','alerts','pools','slottop','drops','matrix','pairseries','pairalerts'].forEach(id=>document.getElementById(id).style.display='none');}
+  ['summary','moves','races','series','alerts','pools','slottop','drops','matrix','pairhorse','pairseries','pairalerts'].forEach(id=>document.getElementById(id).style.display='none');}
 async function loadRemote(){
   const repo=document.getElementById('repo').value.trim();
   const date=document.getElementById('date').value.trim();
@@ -161,6 +162,7 @@ function render(snaps,src){
   renderSlotTop();
   renderDrops();
   renderMatrix();
+  renderPairHorse();
   renderPairSeries();
   renderPairAlerts();
 }
@@ -419,6 +421,86 @@ function renderMatrix(){
      '🔴 紅格 = 賠率 ≤10（大熱組合）｜🟠 橙格 = 10-25（熱門組合）｜空白 = 未報價<br>'+
      '對角線深色格 = 該行馬號（馬會做法）｜例：第 1 行（1 獎星）× 第 4 欄 = 組合「1-4」= 8.5</div>';
   box.innerHTML=h;
+}
+// ── 📊 連贏／位置Q 走勢（按馬號，格式同「每匹馬賠率走勢」）──
+let PH={race:'',pool:'qin',no:''};
+function renderPairHorse(){
+  const box=document.getElementById('pairhorse');
+  const ms=multiSnaps().filter(x=>{const r=x.runs&&x.runs[Object.keys(x.runs)[0]];return true});
+  if(!ms.length){box.style.display='none';return}
+  box.style.display='block';
+  const races=[...new Set(ms.flatMap(x=>Object.keys(x.runs)))].sort((a,b)=>+a-+b);
+  if(!PH.race||!races.includes(PH.race)) PH.race=races[races.length-1];
+  // 號碼清單（由該場 runners）
+  const last=ms[ms.length-1].runs[PH.race]||{};
+  const nums=(last.runners||[]).map(x=>+x.no).sort((a,b)=>a-b);
+  if(!PH.no||!nums.includes(+PH.no)) PH.no=String(nums[0]||1);
+  const sel=(id,opts,val)=>`<select onchange="PH.${id}=this.value;renderPairHorse()" style="background:#0e1830;color:#e8eefc;border:1px solid #243453;border-radius:8px;padding:7px 10px;font-size:13.5px">
+    ${opts.map(o=>`<option value="${o.v}" ${String(o.v)===String(val)?'selected':''}>${o.l}</option>`).join('')}</select>`;
+  let h=`<b>📊 連贏／位置Q 走勢（按馬號）</b> <span class="muted">（揀場次 + 彩池 + 馬號 → 顯示該馬所有組合）</span>
+    <div style="margin-top:12px;display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap">
+      <div><label style="display:block;font-size:12px;color:#93a7c9;margin-bottom:4px">① 場次</label>
+        ${sel('race',races.map(r=>({v:r,l:'第 '+r+' 場'})),PH.race)}</div>
+      <div><label style="display:block;font-size:12px;color:#93a7c9;margin-bottom:4px">② 彩池</label>
+        ${sel('pool',[{v:'qin',l:'連贏'},{v:'qpl',l:'位置Q'}],PH.pool)}</div>
+      <div><label style="display:block;font-size:12px;color:#93a7c9;margin-bottom:4px">③ 馬號</label>
+        ${sel('no',nums.map(n=>({v:n,l:n+' '+nameOf(PH.race,n)})),PH.no)}</div>
+    </div>
+    <div id="phResult" style="margin-top:12px"></div>`;
+  box.innerHTML=h;
+  const el=document.getElementById('phResult');
+  const rn=PH.race, pool=PH.pool, me=+PH.no, pk=pool==='qin'?'qin':'qpl';
+  // 有有效組合數據嘅快照
+  const valid=ms.filter(x=>{const r=x.runs[rn]; return r && Object.keys(r[pk]||{}).length>=40});
+  if(valid.length<2){el.innerHTML='<div class="muted">該場冇足夠組合數據（需要 ≥2 張有效快照）</div>';return}
+  // 組合清單（與 me 相關）
+  const pairs=[];
+  nums.forEach(n=>{ if(n===me) return; pairs.push(me<n?me+'-'+n:n+'-'+me); });
+  // 時間軸抽樣
+  const times=valid.map(x=>x.hhmm);
+  let pick=times.map((_,i)=>i);
+  if(times.length>12){const st=(times.length-1)/11; pick=[]; for(let i=0;i<12;i++) pick.push(Math.round(i*st));}
+  const tsel=pick.map(i=>times[i]);
+  // 池總額輔助
+  const poolOf=sn=>((sn.runs[rn]||{}).pools||{})[pk==='qin'?'QIN':'QPL']||null;
+  const shareOf=(sn,k)=>{ const d=(sn.runs[rn]||{})[pk]||{}; const tot=Object.values(d).filter(v=>v>1.5&&v<900).reduce((s,v)=>s+1/v,0);
+    const v=d[k]; return (v>1.5&&v<900&&tot)?(1/v)/tot:null; };
+  const base=valid[0], lastS=valid[valid.length-1];
+  const p0=poolOf(base), p1=poolOf(lastS);
+  let html='<div style="overflow-x:auto"><table><tr><th>組合</th><th>馬名</th>';
+  tsel.slice(1,-1).forEach(t=>{html+=`<th>${t.slice(0,2)}:${t.slice(2)}</th>`});
+  html+='<th>最新</th><th>變幅</th><th>實際投注額</th><th>淨流入</th><th>走勢</th></tr>';
+  let any=false;
+  for(const k of pairs){
+    const v0=(base.runs[rn][pk]||{})[k], v1=(lastS.runs[rn][pk]||{})[k];
+    if(!v0||!v1) continue; any=true;
+    const r=v1/v0;
+    const hist=valid.map(x=>((x.runs[rn][pk]||{})[k])).filter(v=>v>1.5&&v<900);
+    const sh1=shareOf(lastS,k), amt=(p1&&sh1)?p1*0.825*sh1:null;
+    const sh0=shareOf(base,k);
+    const net=(p1&&sh1&&sh0)?p1*0.825*(sh1-sh0):null;
+    const spark=(arr)=>{ if(!arr||arr.length<2) return '';
+      const mn=Math.min(...arr),mx=Math.max(...arr),W=90,Hh=22,kk=arr.length;
+      const pts=arr.map((v,t)=>{const px=kk>1?t/(kk-1)*W:0;const py=mx>mn?Hh-(v-mn)/(mx-mn)*Hh:Hh/2;return px.toFixed(1)+','+py.toFixed(1)}).join(' ');
+      return `<svg width="${W}" height="${Hh}" style="vertical-align:middle"><polyline points="${pts}" fill="none" stroke="${arr[arr.length-1]<arr[0]?'#8ff0c8':'#ff8f7a'}" stroke-width="1.5"/></svg>`};
+    const [i2,j2]=k.split('-');
+    html+=`<tr><td><b>${k}</b></td><td class="muted">${nameOf(rn,i2)} × ${nameOf(rn,j2)}</td>`;
+    let prev=v0;
+    for(let t=1;t<tsel.length-1;t++){
+      const si=times.indexOf(tsel[t]); const v=(valid[si].runs[rn][pk]||{})[k];
+      if(!v){html+='<td class="muted">—</td>';continue}
+      html+=`<td class="${v<prev?'dn':(v>prev?'up':'')}">${v.toFixed(v<10?1:0)}</td>`; prev=v;
+    }
+    html+=`<td><b>${v1.toFixed(v1<10?1:0)}</b></td>
+      <td class="${r<1?'dn':'up'}"><b>${r<1?'':'+'}${(100*(r-1)).toFixed(0)}%</b></td>
+      <td>${amt?formatMoney(amt):'—'}</td>
+      <td class="${net>0?'dn':(net<0?'up':'')}">${net?(net>0?'+':'')+formatMoney(net):'—'}</td>
+      <td>${spark(hist)}</td></tr>`;
+  }
+  html+='</table></div>';
+  if(!any){el.innerHTML='<div class="muted">該馬號冇有效組合數據</div>';return}
+  el.innerHTML=`<div class="muted" style="margin-bottom:8px">${pool==='qin'?'連贏':'位置Q'} 第 ${rn} 場 · 馬號 ${me} ${nameOf(rn,me)} · ${valid.length} 張快照
+    ${p0&&p1?'· 彩池 $'+Math.round(p0).toLocaleString()+' → $'+Math.round(p1).toLocaleString():''}</div>`+html;
 }
 // ── 📈 連贏/位置Q 走勢（組合層面）──
 function renderPairSeries(){
