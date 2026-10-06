@@ -202,6 +202,16 @@ function render(snaps,src){
   renderPairAlerts();
 }
 // ── 真實彩池（由 runs 取得）──
+// 全域場次同步：改一個下拉 → 所有面板跟隨
+function setRace(r){
+  SERIES.race=r; SLOT.race=r; PH.race=r;
+  try{ renderSeries(); }catch(e){}
+  try{ renderMatrix(); }catch(e){}
+  try{ renderPairHorse(); }catch(e){}
+  try{ renderPairSeries(); }catch(e){}
+  try{ renderPairAlerts(); }catch(e){}
+  try{ renderSlotTop(); }catch(e){}
+}
 function multiSnaps(){return SNAPS.filter(s=>s.runs&&Object.keys(s.runs).length)}
 // 真實場次（排除幻影：馬名組合與其他場次相同）
 function realRaces(ms){
@@ -270,7 +280,7 @@ function renderSlotTop(){
   const races=realRaces(ms);
   if(!SLOT.race||!races.includes(SLOT.race)) SLOT.race=races[0];
   if(!SLOT.slot||!slots.includes(SLOT.slot)) SLOT.slot=slots[slots.length-1];
-  const sel=(id,opts,val,lab)=>`<select id="${id}" onchange="SLOT.${id}=this.value;searchSlotTop()" style="background:#0e1830;color:#e8eefc;border:1px solid #243453;border-radius:8px;padding:7px 10px;font-size:13.5px">
+  const sel=(id,opts,val,lab)=>`<select id="${id}" onchange="SLOT.${id}=this.value;${id==='race'?'SLOT.slot=\'\';setRace(this.value)':id==='pool'?'searchSlotTop()':'searchSlotTop()'}" style="background:#0e1830;color:#e8eefc;border:1px solid #243453;border-radius:8px;padding:7px 10px;font-size:13.5px">
     ${opts.map(o=>`<option value="${o.v}" ${o.v===val?'selected':''}>${o.l}</option>`).join('')}</select>`;
   let h=`<b>⏰ 時段 Top 10 跌幅</b> <span class="muted">（三個都揀好即自動更新 ✓）</span>
     <div style="margin-top:12px;display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap">
@@ -421,7 +431,7 @@ function renderMatrix(){
   if(!SERIES.race||!races.includes(SERIES.race)) SERIES.race=races[0];
   const r=ms[ms.length-1].runs[SERIES.race];
   const nums=(r.runners||[]).map(x=>+x.no).sort((a,b)=>a-b);
-  const sel=`<select onchange="SERIES.race=this.value;renderSeries();renderMatrix();renderPairSeries();renderPairAlerts()" style="background:#0e1830;color:#e8eefc;border:1px solid #243453;border-radius:8px;padding:6px 10px">
+  const sel=`<select onchange="setRace(this.value)" style="background:#0e1830;color:#e8eefc;border:1px solid #243453;border-radius:8px;padding:6px 10px">
     ${races.map(x=>`<option value="${x}" ${x===SERIES.race?'selected':''}>第 ${x} 場</option>`).join('')}</select>`;
   const nmap={}; (r.runners||[]).forEach(x=>nmap[+x.no]=x.name);
   const n=nums.length, half=Math.floor(n/2);   // 馬會做法：左右各顯示一半
@@ -482,7 +492,7 @@ function renderPairHorse(){
   const last=ms[ms.length-1].runs[PH.race]||{};
   const nums=(last.runners||[]).map(x=>+x.no).sort((a,b)=>a-b);
   if(!PH.no||!nums.includes(+PH.no)) PH.no=String(nums[0]||1);
-  const sel=(id,opts,val)=>`<select onchange="PH.${id}=this.value;renderPairHorse()" style="background:#0e1830;color:#e8eefc;border:1px solid #243453;border-radius:8px;padding:7px 10px;font-size:13.5px">
+  const sel=(id,opts,val)=>`<select onchange="PH.${id}=this.value;${id==='race'?'setRace(this.value)':'renderPairHorse()'}" style="background:#0e1830;color:#e8eefc;border:1px solid #243453;border-radius:8px;padding:7px 10px;font-size:13.5px">
     ${opts.map(o=>`<option value="${o.v}" ${String(o.v)===String(val)?'selected':''}>${o.l}</option>`).join('')}</select>`;
   let h=`<b>📊 連贏／位置Q 走勢（按馬號）</b> <span class="muted">（揀場次 + 彩池 + 馬號 → 顯示該馬所有組合）</span>
     <div style="margin-top:12px;display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap">
@@ -793,7 +803,7 @@ function renderSeries(){
   };
   const realW=realPool(SERIES.race);
   const POOL=realW||(parseFloat(document.getElementById('pool').value||'10'))*1e6;
-  const sel=`<select id="raceSel" onchange="SERIES.race=this.value;renderSeries()" style="background:#0e1830;color:#e8eefc;border:1px solid #243453;border-radius:8px;padding:6px 10px">
+  const sel=`<select id="raceSel" onchange="setRace(this.value)" style="background:#0e1830;color:#e8eefc;border:1px solid #243453;border-radius:8px;padding:6px 10px">
     ${races.map(r=>`<option value="${r}" ${r===SERIES.race?'selected':''}>第 ${r} 場</option>`).join('')}</select>`;
   let h='<b>每匹馬賠率走勢</b> '+sel+
     ` <span class="muted" style="margin-left:8px">${rows.length} 匹｜${snaps.length} 個快照（顯示 ${tsel.length} 個時間點）</span>`;
