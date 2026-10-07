@@ -55,6 +55,8 @@ th{color:var(--dim);font-weight:600;font-size:12.5px}
 
 <script>
 let SNAPS=[];
+// 10/07 HV 開跑時間（用嚟計開跑前 1/2/3 小時基準）
+const OFFTIME={'1':'18:35','2':'19:05','3':'19:35','4':'20:10','5':'20:40','6':'21:10','7':'21:45','8':'22:15','9':'22:50'};
 function parseJSONL(txt){return txt.trim().split('\n').map(l=>{try{return JSON.parse(l)}catch(e){return null}}).filter(Boolean)}
 async function loadDemo(){
   try{const r=await fetch('sample.jsonl'); render(parseJSONL(await r.text()),'示範資料（模擬快照）')}
@@ -170,13 +172,6 @@ function render(snaps,src){
   const rows=[];
   for(const k in first.odds){const a=first.odds[k], b=last.odds[k]; if(a>0&&a<900&&b>0&&b<900) rows.push({k,a,b,r:b/a})}
   // 已按要求取消：走勢分組
-  const sorted=[...rows].sort((x,y)=>x.r-y.r);
-  const seenM=new Set(); const show=[];
-  [...sorted.slice(0,10),...sorted.slice(-10).reverse()].forEach(x=>{if(!seenM.has(x.k)){seenM.add(x.k);show.push(x)}});
-  mv.innerHTML=`<b>最大變動（落飛 ↑ / 退飛 ↓）</b><table><tr><th>場次</th><th>馬名</th><th>開盤</th><th>最新</th><th>變幅</th></tr>`+
-    show.map(x=>{const [rn,nm]=x.k.includes('|')?x.k.split('|'):['-',x.k];
-      return `<tr><td>R${rn}</td><td>${nm}</td><td>${fmt(x.a)}</td><td>${fmt(x.b)}</td>
-      <td class="${x.r<1?'dn':'up'}">${x.r<1?'':'+'}${(100*(x.r-1)).toFixed(0)}%</td></tr>`}).join('')+'</table>';
   // ── 每場落飛王（改版）：開跑前 3h / 2h / 1h vs 最新，四個彩池 ──
   const rr=document.getElementById('races'); rr.style.display='block';
   const M=multiSnaps();
@@ -390,10 +385,16 @@ function renderDrops(){
   const box=document.getElementById('drops');
   const ms=multiSnaps(); if(ms.length<2){box.style.display='none';return}
   box.style.display='block';
-  const allTimes=[...new Set(ms.map(x=>x.hhmm))].sort();
-  const slots=allTimes.filter(t=>t.endsWith('00'));
-  if(!BM.after) BM.after=slots[0]||allTimes[0];
   const toMin=h=>Math.floor(+h/100)*60+(+h%100);
+  // 時段清單：用 ts（有日期）建 key，避免跨日混淆
+  const seenSlot={};
+  ms.forEach(x=>{ const t=x.ts; if(!t) return; const key=t.slice(0,13);  // YYYY-MM-DDTHH
+    if(!seenSlot[key]) seenSlot[key]={key, label:t.slice(5,10).replace('-','/')+' '+t.slice(11,13)+':00', hhmm:t.slice(11,13)+'00', date:t.slice(0,10)};
+  });
+  const slots=Object.keys(seenSlot).sort().map(k=>seenSlot[k]);
+  const cur=slots.find(x=>x.key===BM.after)||slots[0];
+  if(!BM.after) BM.after=cur?cur.key:'';
+  const fmtSlotKey=k=>{const x=seenSlot[k]; return x?x.label:(k||'—')};
   const rn=SLOT.race||realRaces(ms)[0];
   const poolKey=BM.pool;
   // 讀數器
@@ -405,11 +406,10 @@ function renderDrops(){
   const keysA=(lastR.runners||[]).map(x=>x.name);
   const keysP=Object.keys(lastR[poolKey==='QIN'?'qin':'qpl']||{});
   const keys=(poolKey==='WIN'||poolKey==='PLA')?keysA:keysP;
-  const afterMin=toMin(BM.after);
   const ev=[];
   for(let i=0;i<ms.length;i++){
-    const t0=toMin(ms[i].hhmm);
-    if(t0<afterMin) continue;
+    const key0=(ms[i].ts||'').slice(0,13);
+    if(BM.after && key0 < BM.after) continue;   // 起點要喺所選時間之後
     const t1=t0+BM.win;
     // 搵最接近 t0+win 嘅快照
     let j=-1,best=1e9;
@@ -429,11 +429,11 @@ function renderDrops(){
   const sel=(id,opts,val,lab)=>`<div><label style="display:block;font-size:12px;color:#93a7c9;margin-bottom:4px">${lab}</label>
     <select onchange="BM.${id}=this.value;renderDrops()" style="background:#0e1830;color:#e8eefc;border:1px solid #243453;border-radius:8px;padding:7px 10px;font-size:13.5px">
     ${opts.map(o=>`<option value="${o.v}" ${String(o.v)===String(val)?'selected':''}>${o.l}</option>`).join('')}</select></div>`;
-  const fmtSlot=t=>`${t.slice(0,2)}/${t.slice(2,4)} ${t.slice(4,6)}:00`;
+  const fmtSlot=fmtSlotKey;
   let h=`<b>🔎 大幅變動警示</b> <span class="muted">（同一匹馬／組合同一時段可有多次紀錄 ✓）</span>
     <div style="margin-top:12px;display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end">
       ${sel('pool',[{v:'WIN',l:'獨贏'},{v:'PLA',l:'位置'},{v:'QIN',l:'連贏'},{v:'QPL',l:'位置Q'}],BM.pool,'① 彩池')}
-      ${sel('after',slots.map(t=>({v:t,l:fmtSlot(t)})),BM.after,'② 幾點以後')}
+      ${sel('after',slots.map(t=>({v:t.key,l:t.label})),BM.after,'② 幾點以後')}
       ${sel('win',[15,30,45,60,90,120].map(m=>({v:m,l:m+' 分鐘'})),BM.win,'③ 時間段')}
       ${sel('thr',[...Array(30)].map((_,i)=>({v:i+1,l:'≥ '+(i+1)+'%'})).concat([{v:31,l:'≥ 30% 以上'}]),BM.thr,'④ 賠率跌幅')}
       <div style="font-size:12px;color:#93a7c9">場次跟上面主選單（第 ${rn} 場）</div>
