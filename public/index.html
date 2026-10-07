@@ -489,10 +489,10 @@ function renderMatrix(){
   const races=realRaces(ms);
   if(!SERIES.race||!races.includes(SERIES.race)) SERIES.race=races[0];
   const r=ms[ms.length-1].runs[SERIES.race];
-  const nums=(((r&&r.runners)||[])||[]).map(x=>+x.no).sort((a,b)=>a-b);
+  const nums=(((r&&((r.runners)||[]))||[])||[]).map(x=>+x.no).sort((a,b)=>a-b);
   const sel=`<select onchange="setRace(this.value)" style="background:#0e1830;color:#e8eefc;border:1px solid #243453;border-radius:8px;padding:6px 10px">
     ${races.map(x=>`<option value="${x}" ${x===SERIES.race?'selected':''}>第 ${x} 場</option>`).join('')}</select>`;
-  const nmap={}; (((r&&r.runners)||[])||[]).forEach(x=>nmap[+x.no]=x.name);
+  const nmap={}; (((r&&((r.runners)||[]))||[])||[]).forEach(x=>nmap[+x.no]=x.name);
   const n=nums.length, half=Math.floor(n/2);   // 馬會做法：左右各顯示一半
   const mk=(title,data)=>{
     const vals=Object.values(data).filter(v=>v>1.5);
@@ -530,8 +530,8 @@ function renderMatrix(){
     return h;
   };
   let h=`<b>📐 連贏／位置Q 賠率矩陣</b> <span class="muted">（馬會格式，資料來源：${ms[ms.length-1].hhmm}）</span> ${sel}`;
-  h+=mk('連贏', r.qin||{});
-  h+=mk('位置Q', r.qpl||{});
+  h+=mk('連贏', (r&&r.qin)||{});
+  h+=mk('位置Q', (r&&r.qpl)||{});
   h+='<div class="muted" style="margin-top:10px;line-height:1.8">'+
      '📖 <b>馬會排列</b>：上面一欄 = 第二匹馬（馬號）｜右邊 = 該行馬號（第一匹馬）｜左邊深色格 = 對角標記（馬號+7）<br>'+
      '🔴 紅格 = 賠率 ≤10（大熱組合）｜🟠 橙格 = 10-25（熱門組合）｜空白 = 未報價<br>'+
