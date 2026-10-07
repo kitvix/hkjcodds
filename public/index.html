@@ -396,88 +396,85 @@ function searchSlotTop(){
         <td class="dn"><b>${x.ch.toFixed(1)}%</b></td></tr>`).join('')}
     </table></div>`;;
 }
-// ── 🔎 大幅變動警示（4 個篩選：彩池 / 幾點以後 / 時間段 / 變動門檻）──
-let BM={pool:'WIN', after:'', win:30, thr:5};
+// ── 🔎 大幅變動警示（全部場次；窗口內任意時點）──
+let BM={pool:'WIN', after:'', win:90, thr:30};
 function renderDrops(){
   const box=document.getElementById('drops');
   const ms=multiSnaps(); if(ms.length<2){box.style.display='none';return}
   box.style.display='block';
-  const toMin=h=>Math.floor(+h/100)*60+(+h%100);
-  const WIN=+BM.win||30;        // 下拉值係字串 → 必須轉數字 ✗
-  const THR=+BM.thr||5;
-  // 時段清單：用 ts（有日期）建 key，避免跨日混淆
-  const seenSlot={};
-  ms.forEach(x=>{ const t=x.ts; if(!t) return; const key=t.slice(0,13);  // YYYY-MM-DDTHH
-    if(!seenSlot[key]) seenSlot[key]={key, label:t.slice(5,10).replace('-','/')+' '+t.slice(11,13)+':00', hhmm:t.slice(11,13)+'00', date:t.slice(0,10)};
-  });
-  const slots=Object.keys(seenSlot).sort().map(k=>seenSlot[k]);
-  const cur=slots.find(x=>x.key===BM.after)||slots[0];
-  if(!BM.after) BM.after=cur?cur.key:'';
-  const fmtSlotKey=k=>{const x=seenSlot[k]; return x?x.label:(k||'—')};
-  const rn=SLOT.race||realRaces(ms)[0];
-  const poolKey=BM.pool;
-  // 讀數器
-  const val=(sn,k)=>{ const r=sn.runs[rn]; if(!r) return null;
-    if(poolKey==='WIN'||poolKey==='PLA'){ const h=(r.runners||[]).find(x=>x.name===k); const v=h?(poolKey==='WIN'?h.win:h.place):null; return (v>1.2&&v<900)?v:null; }
+  const WIN=+BM.win||90, THR=+BM.thr||30, poolKey=BM.pool;
+  // 時段清單（用 ts，含日期）
+  const seen={};
+  ms.forEach(x=>{const t=x.ts; if(!t) return; const k=t.slice(0,13);
+    if(!seen[k]) seen[k]={key:k,label:t.slice(5,10).replace('-','/')+' '+t.slice(11,13)+':00'};});
+  const slots=Object.keys(seen).sort().map(k=>seen[k]);
+  if(!BM.after) BM.after=slots[0]?slots[0].key:'';
+  const races=realRaces(ms);
+  const lastS=ms[ms.length-1];
+  const valOf=(sn,rn,k)=>{ const r=sn.runs[rn]; if(!r) return null;
+    if(poolKey==='WIN'||poolKey==='PLA'){ const h=(r.runners||[]).find(x=>x.name===k);
+      const v=h?(poolKey==='WIN'?h.win:h.place):null; return (v>1.2&&v<900)?v:null; }
     const d=r[poolKey==='QIN'?'qin':'qpl']||{}; const v=d[k]; return (v>1.2&&v<900)?v:null; };
-  const last=ms[ms.length-1];
-  const lastR=last.runs[rn]||{};
-  const keysA=(lastR.runners||[]).map(x=>x.name);
-  const keysP=Object.keys(lastR[poolKey==='QIN'?'qin':'qpl']||{});
-  const keys=(poolKey==='WIN'||poolKey==='PLA')?keysA:keysP;
-  const ev=[];
-  for(let i=0;i<ms.length;i++){
-    const key0=(ms[i].ts||'').slice(0,13);
-    if(BM.after && key0 < BM.after) continue;   // 起點要喺所選時間之後
-    const t0=toMin(ms[i].hhmm);
-    // 搵「第一個經過 ≥ 55% 窗口長度」嘅快照（上限 180%），避免稀疏時段配唔到 ✗
-    let j=-1, dtMin=0;
-    const t0ms=new Date(ms[i].ts||0).getTime();
-    for(let k=i+1;k<ms.length;k++){
-      const dt=(new Date(ms[k].ts||0).getTime()-t0ms)/60000;
-      if(dt>WIN*1.8) break;
-      if(dt>=WIN*0.55){ j=k; dtMin=dt; break; }
-    }
-    if(j<0) continue;
-    for(const k of keys){
-      const a=val(ms[i],k), b2=val(ms[j],k);
-      if(a==null||b2==null) continue;
-      const ch=100*(b2/a-1);
-      if(ch<=-THR) ev.push({k, ch, a, b:b2, t0:ms[i].hhmm, t1:ms[j].hhmm, mins:Math.round(dtMin)});
+  const keysOf=(sn,rn)=>{ const r=sn.runs[rn]; if(!r) return [];
+    if(poolKey==='WIN'||poolKey==='PLA') return (r.runners||[]).map(x=>x.name);
+    return Object.keys(r[poolKey==='QIN'?'qin':'qpl']||{}); };
+  // 每場每標的嘅時間序列
+  const series=[];   // {rn,k,t0,v0}
+  for(const rn of races){
+    for(const k of keysOf(lastS,rn)){
+      const s=[]; for(const sn of ms){ if(sn.ts.slice(0,13)<BM.after) continue;
+        const v=valOf(sn,rn,k); if(v!=null) s.push([sn.ts,v]); }
+      if(s.length>=2) series.push({rn,k,s});
     }
   }
+  const ev=[];
+  for(const {rn,k,s} of series){
+    for(let i=0;i<s.length;i++){
+      for(let j=i+1;j<s.length;j++){
+        const dt=(new Date(s[j][0])-new Date(s[i][0]))/60000;
+        if(dt>WIN) break;
+        const ch=100*(s[j][1]/s[i][1]-1);
+        if(ch<=-THR) ev.push({rn,k,ch,a:s[i][1],b:s[j][1],t0:s[i][0],t1:s[j][0],mins:Math.round(dt)});
+      }
+    }
+  }
+  // 去重：同一場 + 同一標的 + 同一「起點」→ 只保留最大跌幅（避免同一事件重複 ✗）
+  const seenKey={};
+  for(const e of ev){
+    const kk=e.rn+'|'+e.k+'|'+e.t0;
+    if(!seenKey[kk] || e.ch<seenKey[kk].ch) seenKey[kk]=e;
+  }
+  ev.length=0; for(const kk in seenKey) ev.push(seenKey[kk]);
   ev.sort((x,y)=>x.ch-y.ch);
   const poolName={WIN:'獨贏',PLA:'位置',QIN:'連贏',QPL:'位置Q'}[poolKey];
-  const nm=k=>{ if(poolKey==='WIN'||poolKey==='PLA') return k;
-    const p2=k.split('-'); return k+'（'+nameOf(rn,p2[0])+' × '+nameOf(rn,p2[1])+'）'; };
+  const nm=(rn,k)=>{ if(poolKey==='WIN'||poolKey==='PLA') return k;
+    const p2=k.split('-'); const f=n=>nameOf(rn,n)||n; return f(p2[0])+' × '+f(p2[1]); };
   const sel=(id,opts,val,lab)=>`<div><label style="display:block;font-size:12px;color:#93a7c9;margin-bottom:4px">${lab}</label>
     <select onchange="BM.${id}=this.value;renderDrops()" style="background:#0e1830;color:#e8eefc;border:1px solid #243453;border-radius:8px;padding:7px 10px;font-size:13.5px">
     ${opts.map(o=>`<option value="${o.v}" ${String(o.v)===String(val)?'selected':''}>${o.l}</option>`).join('')}</select></div>`;
-  const fmtSlot=fmtSlotKey;
-  let h=`<b>🔎 大幅變動警示</b> <span class="muted">（同一匹馬／組合同一時段可有多次紀錄 ✓）</span>
+  const hhmm=st=>st.slice(11,16), dd=st=>st.slice(5,10).replace('-','/');
+  let h=`<b>🔎 大幅變動警示</b> <span class="muted">（全部場次；窗口內任意時點；同一標的可多次 ✓）</span>
     <div style="margin-top:12px;display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end">
       ${sel('pool',[{v:'WIN',l:'獨贏'},{v:'PLA',l:'位置'},{v:'QIN',l:'連贏'},{v:'QPL',l:'位置Q'}],BM.pool,'① 彩池')}
       ${sel('after',slots.map(t=>({v:t.key,l:t.label})),BM.after,'② 幾點以後')}
-      ${sel('win',[15,30,45,60,90,120].map(m=>({v:m,l:m+' 分鐘'})),BM.win,'③ 時間段')}
+      ${sel('win',[15,30,45,60,90,120].map(m=>({v:m,l:m+' 分鐘'})),BM.win,'③ 時間段（窗口內任意時點）')}
       ${sel('thr',[...Array(30)].map((_,i)=>({v:i+1,l:'≥ '+(i+1)+'%'})).concat([{v:31,l:'≥ 30% 以上'}]),BM.thr,'④ 賠率跌幅')}
-      <div style="font-size:12px;color:#93a7c9">場次跟上面主選單（第 ${rn} 場）</div>
     </div>
-    <div style="margin-top:10px;font-size:12.5px;color:#93a7c9">實際窗口：55%–180% 所選長度（稀疏時段都能配對 ✓）<br>條件：起點 ≥ ${fmtSlot(BM.after)}　·　窗口 ${WIN} 分鐘　·　跌幅 ≥ ${THR>30?'30%+':THR+'%'}　·　${poolName}</div>`;
-  if(!ev.length){
-    h+='<div class="muted" style="margin-top:10px">呢個條件下冇符合嘅紀錄（可放寬跌幅或縮短時間段）</div>';
-    box.innerHTML=h; return;
-  }
-  h+=`<div class="muted" style="margin-top:8px">符合紀錄：<b>${ev.length}</b> 條（顯示前 60 條，按跌幅排序）</div>`;
+    <div style="margin-top:10px;font-size:12.5px;color:#93a7c9">邏輯：由 <b>${seen[BM.after]?seen[BM.after].label:BM.after}</b> 到最新，任何 <b>${WIN} 分鐘內</b>出現 ≥ ${THR>30?'30%+':THR+'%'} 跌幅 → 全部列出 ✓（全部場次）</div>`;
+  if(!ev.length){ h+='<div class="muted" style="margin-top:10px">冇符合紀錄（可放寬跌幅或延長窗口）</div>'; box.innerHTML=h; return; }
+  h+=`<div class="muted" style="margin-top:8px">符合紀錄：<b>${ev.length}</b> 條（顯示前 100 條，按跌幅排序）</div>`;
   h+='<div style="overflow-x:auto;margin-top:8px"><table style="table-layout:fixed;width:100%">'
-   +'<colgroup><col style="width:42px"><col><col style="width:118px"><col style="width:118px"><col style="width:150px"><col style="width:80px"></colgroup>'
-   +'<tr><th>#</th><th>標的</th><th>起點賠率</th><th>終點賠率</th><th>時間段</th><th>跌幅</th></tr>';
-  ev.slice(0,60).forEach((x,i)=>{
-    h+=`<tr><td class="muted">${i+1}</td><td style="text-align:left"><b>${nm(x.k)}</b></td>
-      <td>${x.a.toFixed(1)}</td><td><b>${x.b.toFixed(1)}</b></td>
-      <td class="muted">${x.t0.slice(0,2)}:${x.t0.slice(2)} → ${x.t1.slice(0,2)}:${x.t1.slice(2)}（${x.mins}分）</td>
+   +'<colgroup><col style="width:40px"><col style="width:48px"><col><col style="width:96px"><col style="width:96px"><col style="width:170px"><col style="width:76px"></colgroup>'
+   +'<tr><th>#</th><th>場次</th><th>標的</th><th>起點</th><th>終點</th><th>時間段</th><th>跌幅</th></tr>';
+  ev.slice(0,100).forEach((x,i)=>{
+    h+=`<tr><td class="muted">${i+1}</td><td><b>R${x.rn}</b></td>
+      <td style="text-align:left"><b>${nm(x.rn,x.k)}</b></td>
+      <td>${dd(x.t0)} ${hhmm(x.t0)}<br><b>${x.a.toFixed(1)}</b></td>
+      <td>${dd(x.t1)} ${hhmm(x.t1)}<br><b>${x.b.toFixed(1)}</b></td>
+      <td class="muted">${x.mins} 分鐘</td>
       <td class="dn"><b>${x.ch.toFixed(1)}%</b></td></tr>`;
   });
-  h+='</table></div>';
+  h+='</table></div><div class="muted" style="margin-top:8px;font-size:12px">註：只計有報價嘅時點；同一組合可能因唔同時段而出現多次 ✓</div>';
   box.innerHTML=h;
 }
 // ── 📐 連贏/位置Q 矩陣（馬會格式）──
