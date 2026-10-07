@@ -410,6 +410,7 @@ function renderDrops(){
   for(let i=0;i<ms.length;i++){
     const key0=(ms[i].ts||'').slice(0,13);
     if(BM.after && key0 < BM.after) continue;   // 起點要喺所選時間之後
+    const t0=toMin(ms[i].hhmm);
     const t1=t0+BM.win;
     // 搵最接近 t0+win 嘅快照
     let j=-1,best=1e9;
