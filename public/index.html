@@ -87,17 +87,27 @@ async function loadRemote(){
           const j=await r.json();
           txt=decodeURIComponent(escape(atob((j.content||'').replace(/\n/g,''))));
         } else { txt=await r.text(); }
-        // 驗證：必須係真正快照（有 odds 或 runs 嘅記錄 ≥5 筆）
-        let valid=false;
+        // 驗證 + 新鮮度比較：取「最後快照最新」嘅來源 ✓
+        let valid=false, parsed=null;
         if(txt && txt.trim()){
-          const probe=parseJSONL(txt);
-          const okRec=probe.filter(r=>r && (r.odds || r.runs));
+          parsed=parseJSONL(txt);
+          const okRec=parsed.filter(r=>r && (r.odds || r.runs));
           valid = okRec.length>=5;
           if(!valid){ tried.push(x.l+'：回應唔似快照資料（略過）'); continue; }
+          const lastTs=okRec[okRec.length-1].ts||'';
+          const prev=window.__bestTs||'';
+          if(lastTs>prev){ window.__bestParsed=parsed; window.__bestSrc=x.l+' · '+repo+'/'+path; window.__bestTs=lastTs; }
+          const ageMin=(Date.now()-new Date(lastTs).getTime())/60000;
+          tried.push(x.l+'：'+okRec.length+' 張｜最新 '+(lastTs.slice(11,16)||'?')+'（'+Math.round(ageMin)+' 分鐘前）');
+          if(ageMin<12){ // 夠新鮮 → 唔需要再試其他來源 ✓
+            render(parsed, x.l+' · '+repo+'/'+path);
+            return;
+          }
+          continue;   // 唔夠新鮮 → 試下一個來源 ✓
         }
-        if(txt && txt.trim()){
-          const parsed=parseJSONL(txt);
-          render(parsed, x.l+' · '+repo+'/'+path);
+        if(false){
+          const parsed2=parsed;
+          render(parsed2, x.l+' · '+repo+'/'+path);
           // 過舊警告
           try{
             const last=parsed[parsed.length-1];
@@ -115,6 +125,17 @@ async function loadRemote(){
         }
       }
     }catch(e){ tried.push(x.l+'：'+e.message) }
+  }
+  // 冇任何來源夠新鮮 → 用最鮮嘅嗰個（並顯示警告 ✓）
+  if(window.__bestParsed){
+    render(window.__bestParsed, window.__bestSrc+'（最新可用 ✓）');
+    try{
+      const last=window.__bestParsed[window.__bestParsed.length-1];
+      const age=Math.round((Date.now()-new Date(last.ts).getTime())/60000);
+      const st=document.getElementById('status');
+      st.innerHTML+=`<div style="margin-top:9px;color:#ffd76a">⚠️ 所有來源都偏舊（最新 ${(last.ts||'').slice(11,16)}，約 ${age} 分鐘前 ✗）—— 可能係 CDN／Worker 快取。建議按「載入雲端快照」再試。</div>`;
+    }catch(e){}
+    return;
   }
   const t=new Date().toLocaleTimeString('zh-HK');
   note(`<span class="badge" style="background:#3a1a1a;color:#ff9f92">❌ 全部來源都載入失敗</span>
