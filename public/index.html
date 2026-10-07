@@ -403,6 +403,8 @@ function renderDrops(){
   const ms=multiSnaps(); if(ms.length<2){box.style.display='none';return}
   box.style.display='block';
   const toMin=h=>Math.floor(+h/100)*60+(+h%100);
+  const WIN=+BM.win||30;        // 下拉值係字串 → 必須轉數字 ✗
+  const THR=+BM.thr||5;
   // 時段清單：用 ts（有日期）建 key，避免跨日混淆
   const seenSlot={};
   ms.forEach(x=>{ const t=x.ts; if(!t) return; const key=t.slice(0,13);  // YYYY-MM-DDTHH
@@ -428,16 +430,16 @@ function renderDrops(){
     const key0=(ms[i].ts||'').slice(0,13);
     if(BM.after && key0 < BM.after) continue;   // 起點要喺所選時間之後
     const t0=toMin(ms[i].hhmm);
-    const t1=t0+BM.win;
+    const t1=t0+WIN;
     // 搵最接近 t0+win 嘅快照
     let j=-1,best=1e9;
     for(let k=i+1;k<ms.length;k++){ const d=Math.abs(toMin(ms[k].hhmm)-t1); if(d<best){best=d;j=k} if(toMin(ms[k].hhmm)>t1+30) break; }
-    if(j<0||best>BM.win*0.5) continue;
+    if(j<0||best>WIN*0.5) continue;
     for(const k of keys){
       const a=val(ms[i],k), b2=val(ms[j],k);
       if(a==null||b2==null) continue;
       const ch=100*(b2/a-1);
-      if(ch<=-BM.thr) ev.push({k, ch, a, b:b2, t0:ms[i].hhmm, t1:ms[j].hhmm, mins:toMin(ms[j].hhmm)-t0});
+      if(ch<=-THR) ev.push({k, ch, a, b:b2, t0:ms[i].hhmm, t1:ms[j].hhmm, mins:toMin(ms[j].hhmm)-t0});
     }
   }
   ev.sort((x,y)=>x.ch-y.ch);
@@ -456,7 +458,7 @@ function renderDrops(){
       ${sel('thr',[...Array(30)].map((_,i)=>({v:i+1,l:'≥ '+(i+1)+'%'})).concat([{v:31,l:'≥ 30% 以上'}]),BM.thr,'④ 賠率跌幅')}
       <div style="font-size:12px;color:#93a7c9">場次跟上面主選單（第 ${rn} 場）</div>
     </div>
-    <div style="margin-top:10px;font-size:12.5px;color:#93a7c9">條件：起點 ≥ ${fmtSlot(BM.after)}　·　窗口 ${BM.win} 分鐘　·　跌幅 ≥ ${BM.thr>30?'30%+':BM.thr+'%'}　·　${poolName}</div>`;
+    <div style="margin-top:10px;font-size:12.5px;color:#93a7c9">條件：起點 ≥ ${fmtSlot(BM.after)}　·　窗口 ${WIN} 分鐘　·　跌幅 ≥ ${THR>30?'30%+':THR+'%'}　·　${poolName}</div>`;
   if(!ev.length){
     h+='<div class="muted" style="margin-top:10px">呢個條件下冇符合嘅紀錄（可放寬跌幅或縮短時間段）</div>';
     box.innerHTML=h; return;
