@@ -169,13 +169,7 @@ function render(snaps,src){
   const sum=document.getElementById('summary'); sum.style.display='block';
   const rows=[];
   for(const k in first.odds){const a=first.odds[k], b=last.odds[k]; if(a>0&&a<900&&b>0&&b<900) rows.push({k,a,b,r:b/a})}
-  const buckets=[['大幅落飛 ≥30%',r=>r<=0.70],['落飛 15-30%',r=>r>0.70&&r<=0.85],['平穩',r=>r>0.85&&r<=1.15],
-                 ['退飛 15-40%',r=>r>1.15&&r<=1.40],['大幅退飛 >40%',r=>r>1.40]];
-  sum.innerHTML=`<b>走勢分組（${first.hhmm} → ${last.hhmm}）</b><table><tr><th>類別</th><th>匹數</th><th>平均變幅</th></tr>`+
-    buckets.map(([lab,fn])=>{const s=rows.filter(x=>fn(x.r)); if(!s.length) return '';
-      const avg=100*(s.reduce((t,x)=>t+x.r,0)/s.length-1);
-      return `<tr><td>${lab}</td><td>${s.length}</td><td class="${avg<0?'dn':'up'}">${avg>0?'+':''}${avg.toFixed(1)}%</td></tr>`}).join('')+'</table>';
-  const mv=document.getElementById('moves'); mv.style.display='block';
+  // 已按要求取消：走勢分組
   const sorted=[...rows].sort((x,y)=>x.r-y.r);
   const seenM=new Set(); const show=[];
   [...sorted.slice(0,10),...sorted.slice(-10).reverse()].forEach(x=>{if(!seenM.has(x.k)){seenM.add(x.k);show.push(x)}});
@@ -183,23 +177,60 @@ function render(snaps,src){
     show.map(x=>{const [rn,nm]=x.k.includes('|')?x.k.split('|'):['-',x.k];
       return `<tr><td>R${rn}</td><td>${nm}</td><td>${fmt(x.a)}</td><td>${fmt(x.b)}</td>
       <td class="${x.r<1?'dn':'up'}">${x.r<1?'':'+'}${(100*(x.r-1)).toFixed(0)}%</td></tr>`}).join('')+'</table>';
-  const byrace={};
-  rows.forEach(x=>{const [rn,nm]=x.k.includes('|')?x.k.split('|'):['-',x.k]; (byrace[rn]=byrace[rn]||[]).push({nm,a:x.a,b:x.b,r:x.r})});
+  // ── 每場落飛王（改版）：開跑前 3h / 2h / 1h vs 最新，四個彩池 ──
   const rr=document.getElementById('races'); rr.style.display='block';
-  rr.innerHTML=`<b>每場落飛王</b><table><tr><th>場次</th><th>馬名</th><th>開盤</th><th>最新</th><th>變幅</th></tr>`+
-    Object.keys(byrace).sort((a,b)=>(a==='-'?99:+a)-(b==='-'?99:+b)).map(rn=>{
-      const w=byrace[rn].sort((x,y)=>x.r-y.r)[0];
-      return `<tr><td>R${rn}</td><td>${w.nm}</td><td>${fmt(w.a)}</td><td>${fmt(w.b)}</td>
-      <td class="${w.r<1?'dn':'up'}">${w.r<1?'':'+'}${(100*(w.r-1)).toFixed(0)}%</td></tr>`}).join('')+'</table>';
+  const M=multiSnaps();
+  const toMin2=h=>Math.floor(+h/100)*60+(+h%100);
+  const offMin=rn=>{const t=OFFTIME[rn]; return t?toMin2(t.replace(':','')):null};
+  const lastS=M[M.length-1];
+  const near=(rn,mins)=>{ // 最接近（開跑 - mins）嘅快照
+    const off=offMin(rn); if(off==null) return null;
+    const tgt=off-mins; let best=null,bd=1e9;
+    for(const sn of M){ const r=sn.runs[rn]; if(!r) continue;
+      const d=Math.abs(toMin2(sn.hhmm)-tgt); if(d<bd){bd=d;best=sn} }
+    return (best&&bd<=90)?best:null;
+  };
+  const P4=[['WIN','獨贏'],['PLA','位置'],['QIN','連贏'],['QPL','位置Q']];
+  const getv=(sn,rn,k,pk)=>{ const r=sn.runs[rn]; if(!r) return null;
+    if(pk==='WIN'||pk==='PLA'){ const h=(r.runners||[]).find(x=>x.name===k); const v=h?(pk==='WIN'?h.win:h.place):null; return (v>1.2&&v<900)?v:null; }
+    const d=r[pk==='QIN'?'qin':'qpl']||{}; const v=d[k]; return (v>1.2&&v<900)?v:null; };
+  const keysOf=(sn,rn,pk)=>{ const r=sn.runs[rn]; if(!r) return [];
+    if(pk==='WIN'||pk==='PLA') return (r.runners||[]).map(x=>x.name);
+    return Object.keys(r[pk==='QIN'?'qin':'qpl']||{}); };
+  const races=realRaces(M);
+  let hh='<b>每場落飛王</b> <span class="muted">（開跑前 3h／2h／1h → 對比最新賠率，最大跌幅；四個彩池）</span>'
+    +'<div style="overflow-x:auto;margin-top:10px"><table style="table-layout:fixed;width:100%">'
+    +'<colgroup><col style="width:52px"><col style="width:58px"><col style="width:64px"><col><col><col></colgroup>'
+    +'<tr><th>場次</th><th>開跑</th><th>彩池</th><th>前 3 小時</th><th>前 2 小時</th><th>前 1 小時</th></tr>';
+  for(const rn of races){
+    for(const [pk,pn] of P4){
+      const cells=[];
+      for(const mins of [180,120,60]){
+        const base=near(rn,mins);
+        if(!base){cells.push('<td class="muted">—</td>');continue}
+        let bi=null;
+        for(const k of keysOf(lastS,rn,pk)){
+          const a=getv(base,rn,k,pk), b2=getv(lastS,rn,k,pk);
+          if(a==null||b2==null) continue;
+          const ch=100*(b2/a-1);
+          if(ch<0 && (!bi||ch<bi.ch)) bi={k,ch,a,b:b2};
+        }
+        cells.push(bi?`<td style="text-align:left"><b>${bi.k}</b> <span class="dn">${bi.ch.toFixed(0)}%</span> <span class="muted">(${bi.a.toFixed(1)}→${bi.b.toFixed(1)})</span></td>`
+                      :'<td class="muted">—</td>');
+      }
+      hh+=`<tr><td><b>R${rn}</b></td><td class="muted">${OFFTIME[rn]||'—'}</td><td class="muted">${pn}</td>${cells.join('')}</tr>`;
+    }
+  }
+  hh+='</table></div><div class="muted" style="margin-top:8px;font-size:12px">註：連贏／位置Q 嘅組合名為「號-號」，只顯示當場有報價嘅組合 ✓</div>';
+  rr.innerHTML=hh;
   renderSeries();
-  renderAlerts();
+  // 已按要求取消：走勢分組
   renderPools();
   renderSlotTop();
   renderDrops();
   renderMatrix();
   renderPairHorse();
-  renderPairSeries();
-  renderPairAlerts();
+  // 已按要求取消：連贏/位置Q 走勢、連贏/位置Q 大幅變動
 }
 // ── 真實彩池（由 runs 取得）──
 // 全域場次同步：改一個下拉 → 所有面板跟隨
@@ -353,72 +384,76 @@ function searchSlotTop(){
         <td class="dn"><b>${x.ch.toFixed(1)}%</b></td></tr>`).join('')}
     </table></div>`;;
 }
-// ── 💰 大額資金流入警示（新設計：用真實金額 + 流動性過濾 + 相對市場）──
-let FLOW={minAmt:80000, minPoolPct:40, minRel:2};
+// ── 🔎 大幅變動警示（4 個篩選：彩池 / 幾點以後 / 時間段 / 變動門檻）──
+let BM={pool:'WIN', after:'', win:30, thr:5};
 function renderDrops(){
   const box=document.getElementById('drops');
   const ms=multiSnaps(); if(ms.length<2){box.style.display='none';return}
   box.style.display='block';
+  const allTimes=[...new Set(ms.map(x=>x.hhmm))].sort();
+  const slots=allTimes.filter(t=>t.endsWith('00'));
+  if(!BM.after) BM.after=slots[0]||allTimes[0];
   const toMin=h=>Math.floor(+h/100)*60+(+h%100);
-  // 每場最終彩池
-  const fin={};
-  ms.forEach(s=>{for(const rn in s.runs){const p=(s.runs[rn].pools||{}).WIN; if(p) fin[rn]=Math.max(fin[rn]||0,p)}});
+  const rn=SLOT.race||realRaces(ms)[0];
+  const poolKey=BM.pool;
+  // 讀數器
+  const val=(sn,k)=>{ const r=sn.runs[rn]; if(!r) return null;
+    if(poolKey==='WIN'||poolKey==='PLA'){ const h=(r.runners||[]).find(x=>x.name===k); const v=h?(poolKey==='WIN'?h.win:h.place):null; return (v>1.2&&v<900)?v:null; }
+    const d=r[poolKey==='QIN'?'qin':'qpl']||{}; const v=d[k]; return (v>1.2&&v<900)?v:null; };
+  const last=ms[ms.length-1];
+  const lastR=last.runs[rn]||{};
+  const keysA=(lastR.runners||[]).map(x=>x.name);
+  const keysP=Object.keys(lastR[poolKey==='QIN'?'qin':'qpl']||{});
+  const keys=(poolKey==='WIN'||poolKey==='PLA')?keysA:keysP;
+  const afterMin=toMin(BM.after);
   const ev=[];
-  for(let i=1;i<ms.length;i++){
-    const A=ms[i-1],B=ms[i]; const dt=toMin(B.hhmm)-toMin(A.hhmm);
-    if(dt<=0||dt>12) continue;
-    for(const rn in B.runs){
-      const ra=A.runs[rn], rb=B.runs[rn]; if(!ra||!rb) continue;
-      const p0=(ra.pools||{}).WIN, p1=(rb.pools||{}).WIN;
-      if(!p0||!p1) continue;
-      if(p1 < (fin[rn]||0)*FLOW.minPoolPct/100) continue;        // ① 流動性過濾
-      const k1={},k2={};
-      (ra.runners||[]).forEach(x=>{if(x.win>1.2&&x.win<900)k1[x.name]=x.win});
-      (rb.runners||[]).forEach(x=>{if(x.win>1.2&&x.win<900)k2[x.name]=x.win});
-      const ks=Object.keys(k1).filter(k=>k2[k]);
-      if(ks.length<5) continue;
-      const t0=ks.reduce((s,k)=>s+1/k1[k],0), t1=ks.reduce((s,k)=>s+1/k2[k],0);
-      const shares=ks.map(k=>({k, s0:(1/k1[k])/t0, s1:(1/k2[k])/t1}));
-      shares.forEach(x=>{x.d=x.s1-x.s0});                        // ② 佔比變化
-      // ③ 相對市場（扣除全場中位數）
-      const med=[...shares.map(x=>x.d)].sort((a,b)=>a-b)[Math.floor(ks.length/2)];
-      shares.forEach(x=>{
-        // 超額流入 = 現時彩池 × 82.5% × 佔比變化
-        // （即「相對於全場應得份額，額外流入／流出嘅錢」）
-        const net = p1*0.825*x.d;
-        const rel = 100*(x.d-med);
-        // 只顯示「賠率下跌（佔比上升）」= 真正有大額資金流入
-        if(net>=FLOW.minAmt && rel>=FLOW.minRel && x.d>0 && k2[x.k]<k1[x.k])
-          ev.push({hhmm:B.hhmm, race:rn, nm:x.k, a:k1[x.k], b:k2[x.k],
-                   net, rel, dpct:100*x.d, pool:p1, dt});
-      });
+  for(let i=0;i<ms.length;i++){
+    const t0=toMin(ms[i].hhmm);
+    if(t0<afterMin) continue;
+    const t1=t0+BM.win;
+    // 搵最接近 t0+win 嘅快照
+    let j=-1,best=1e9;
+    for(let k=i+1;k<ms.length;k++){ const d=Math.abs(toMin(ms[k].hhmm)-t1); if(d<best){best=d;j=k} if(toMin(ms[k].hhmm)>t1+30) break; }
+    if(j<0||best>BM.win*0.5) continue;
+    for(const k of keys){
+      const a=val(ms[i],k), b2=val(ms[j],k);
+      if(a==null||b2==null) continue;
+      const ch=100*(b2/a-1);
+      if(ch<=-BM.thr) ev.push({k, ch, a, b:b2, t0:ms[i].hhmm, t1:ms[j].hhmm, mins:toMin(ms[j].hhmm)-t0});
     }
   }
-  ev.sort((x,y)=>y.net-x.net);
-  const ctrl=`<div style="margin-top:10px;padding:9px 12px;background:#0e1830;border-radius:9px;line-height:2.1">
-    <b>🎚️ 篩選條件</b>　淨流入 ≥ <input type="range" min="20000" max="500000" step="10000" value="${FLOW.minAmt}" oninput="FLOW.minAmt=+this.value;renderDrops()" style="width:150px;vertical-align:middle"> <b>HK$${FLOW.minAmt.toLocaleString()}</b>
-    　彩池 ≥ 最終 <input type="range" min="10" max="90" step="5" value="${FLOW.minPoolPct}" oninput="FLOW.minPoolPct=+this.value;renderDrops()" style="width:120px;vertical-align:middle"> <b>${FLOW.minPoolPct}%</b>
-    　相對市場 ≥ <input type="range" min="0" max="10" step="0.5" value="${FLOW.minRel}" oninput="FLOW.minRel=+this.value;renderDrops()" style="width:110px;vertical-align:middle"> <b>${FLOW.minRel}%</b>
-  </div>`;
-  if(!ev.length){box.innerHTML='<b>💰 大額資金流入警示</b>'+ctrl+'<div class="muted" style="margin-top:8px">未符合條件（可調低上面嘅門檻）</div>';return}
-  let h=`<b>💰 大額資金流入警示</b> <span class="muted">（只列**賠率下跌**＝真有大額資金流入嘅馬）｜共 ${ev.length} 條</span>${ctrl}`;
-  h+='<div style="overflow-x:auto;margin-top:10px"><table><tr><th>時間</th><th>場次</th><th>馬名</th><th>賠率變化</th><th>淨流入</th><th>佔比變化</th><th>相對市場</th><th>該場彩池</th><th>間隔</th></tr>';
-  for(const z of ev.slice(0,25)){
-    h+=`<tr><td>${z.hhmm.slice(0,2)}:${z.hhmm.slice(2)}</td><td>R${z.race}</td><td><b>${z.nm}</b></td>
-        <td>${z.a.toFixed(1)} → <b>${z.b.toFixed(1)}</b></td>
-        <td class="dn"><b>+HK$${Math.round(z.net).toLocaleString()}</b></td>
-        <td class="dn">+${z.dpct.toFixed(1)}%</td>
-        <td class="dn">+${z.rel.toFixed(1)}%</td>
-        <td class="muted">$${Math.round(z.pool).toLocaleString()}</td>
-        <td class="muted">${z.dt} 分</td></tr>`;
+  ev.sort((x,y)=>x.ch-y.ch);
+  const poolName={WIN:'獨贏',PLA:'位置',QIN:'連贏',QPL:'位置Q'}[poolKey];
+  const nm=k=>{ if(poolKey==='WIN'||poolKey==='PLA') return k;
+    const p2=k.split('-'); return k+'（'+nameOf(rn,p2[0])+' × '+nameOf(rn,p2[1])+'）'; };
+  const sel=(id,opts,val,lab)=>`<div><label style="display:block;font-size:12px;color:#93a7c9;margin-bottom:4px">${lab}</label>
+    <select onchange="BM.${id}=this.value;renderDrops()" style="background:#0e1830;color:#e8eefc;border:1px solid #243453;border-radius:8px;padding:7px 10px;font-size:13.5px">
+    ${opts.map(o=>`<option value="${o.v}" ${String(o.v)===String(val)?'selected':''}>${o.l}</option>`).join('')}</select></div>`;
+  const fmtSlot=t=>`${t.slice(0,2)}/${t.slice(2,4)} ${t.slice(4,6)}:00`;
+  let h=`<b>🔎 大幅變動警示</b> <span class="muted">（同一匹馬／組合同一時段可有多次紀錄 ✓）</span>
+    <div style="margin-top:12px;display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end">
+      ${sel('pool',[{v:'WIN',l:'獨贏'},{v:'PLA',l:'位置'},{v:'QIN',l:'連贏'},{v:'QPL',l:'位置Q'}],BM.pool,'① 彩池')}
+      ${sel('after',slots.map(t=>({v:t,l:fmtSlot(t)})),BM.after,'② 幾點以後')}
+      ${sel('win',[15,30,45,60,90,120].map(m=>({v:m,l:m+' 分鐘'})),BM.win,'③ 時間段')}
+      ${sel('thr',[...Array(30)].map((_,i)=>({v:i+1,l:'≥ '+(i+1)+'%'})).concat([{v:31,l:'≥ 30% 以上'}]),BM.thr,'④ 賠率跌幅')}
+      <div style="font-size:12px;color:#93a7c9">場次跟上面主選單（第 ${rn} 場）</div>
+    </div>
+    <div style="margin-top:10px;font-size:12.5px;color:#93a7c9">條件：起點 ≥ ${fmtSlot(BM.after)}　·　窗口 ${BM.win} 分鐘　·　跌幅 ≥ ${BM.thr>30?'30%+':BM.thr+'%'}　·　${poolName}</div>`;
+  if(!ev.length){
+    h+='<div class="muted" style="margin-top:10px">呢個條件下冇符合嘅紀錄（可放寬跌幅或縮短時間段）</div>';
+    box.innerHTML=h; return;
   }
+  h+=`<div class="muted" style="margin-top:8px">符合紀錄：<b>${ev.length}</b> 條（顯示前 60 條，按跌幅排序）</div>`;
+  h+='<div style="overflow-x:auto;margin-top:8px"><table style="table-layout:fixed;width:100%">'
+   +'<colgroup><col style="width:42px"><col><col style="width:118px"><col style="width:118px"><col style="width:150px"><col style="width:80px"></colgroup>'
+   +'<tr><th>#</th><th>標的</th><th>起點賠率</th><th>終點賠率</th><th>時間段</th><th>跌幅</th></tr>';
+  ev.slice(0,60).forEach((x,i)=>{
+    h+=`<tr><td class="muted">${i+1}</td><td style="text-align:left"><b>${nm(x.k)}</b></td>
+      <td>${x.a.toFixed(1)}</td><td><b>${x.b.toFixed(1)}</b></td>
+      <td class="muted">${x.t0.slice(0,2)}:${x.t0.slice(2)} → ${x.t1.slice(0,2)}:${x.t1.slice(2)}（${x.mins}分）</td>
+      <td class="dn"><b>${x.ch.toFixed(1)}%</b></td></tr>`;
+  });
   h+='</table></div>';
-  h+='<div class="muted" style="margin-top:9px;line-height:1.8">'+
-     '<b>為何要用真實金額而唔係 % 跌幅？</b><br>'+
-     '• 早期彩池細（佔最終 <10%）→ 小額注碼已可令賠率大跌 ✗ 噪音<br>'+
-     '• 所以加上「彩池 ≥ 最終 40%」過濾 → 今日 129 個事件只剩 ~15 個可信 ✓<br>'+
-     '• 「相對市場」扣除全場同步變化 → 隔離真正嘅個別資金流 ✓<br>'+
-     '<b>只會列出賠率下跌嘅馬</b>（佔比上升 = 真正有人大手買入）✓</div>';
   box.innerHTML=h;
 }
 // ── 📐 連贏/位置Q 矩陣（馬會格式）──
