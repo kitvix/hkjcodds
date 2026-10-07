@@ -176,14 +176,28 @@ function render(snaps,src){
   const rr=document.getElementById('races'); rr.style.display='block';
   const M=multiSnaps();
   const toMin2=h=>Math.floor(+h/100)*60+(+h%100);
-  const offMin=rn=>{const t=OFFTIME[rn]; return t?toMin2(t.replace(':','')):null};
   const lastS=M[M.length-1];
-  const near=(rn,mins)=>{ // 最接近（開跑 - mins）嘅快照
-    const off=offMin(rn); if(off==null) return null;
-    const tgt=off-mins; let best=null,bd=1e9;
-    for(const sn of M){ const r=sn.runs[rn]; if(!r) continue;
-      const d=Math.abs(toMin2(sn.hhmm)-tgt); if(d<bd){bd=d;best=sn} }
-    return (best&&bd<=90)?best:null;
+  // 賽日（用最後快照嘅日期）
+  const RACEDATE=(lastS.ts||'').slice(0,10);
+  const offStamp=rn=>{const t=OFFTIME[rn]; return t?RACEDATE+'T'+t:null};   // YYYY-MM-DDTHH:MM
+  const addMin=(stamp,mins)=>{ // 'YYYY-MM-DDTHH:MM' 加減分鐘
+    const d=new Date(stamp.replace(' ','T')+':00'); d.setMinutes(d.getMinutes()+mins);
+    const p2=n=>String(n).padStart(2,'0');
+    return d.getFullYear()+'-'+p2(d.getMonth()+1)+'-'+p2(d.getDate())+'T'+p2(d.getHours())+':'+p2(d.getMinutes());
+  };
+  const minutesApart=(a,b)=>Math.abs((new Date(a.replace(' ','T')+':00'))-(new Date(b.replace(' ','T')+':00')))/60000;
+  const near=(rn,mins)=>{ // 最接近（開跑 − mins）而且係同一日、已過去嘅快照（容許 ±25 分鐘）
+    const off=offStamp(rn); if(!off) return null;
+    const tgt=addMin(off,-mins);
+    let best=null,bd=1e9;
+    for(const sn of M){
+      if(!sn.runs[rn] || !sn.ts) continue;
+      if(sn.ts.slice(0,10)!==RACEDATE) continue;        // 必須同一日 ✓
+      if(sn.ts > lastS.ts) continue;
+      const d=minutesApart(sn.ts,tgt);
+      if(d<bd){bd=d;best=sn}
+    }
+    return (best&&bd<=25)?best:null;                    // 超出 ±25 分鐘 → 未有數據
   };
   const P4=[['WIN','獨贏'],['PLA','位置'],['QIN','連贏'],['QPL','位置Q']];
   const getv=(sn,rn,k,pk)=>{ const r=sn.runs[rn]; if(!r) return null;
@@ -193,7 +207,7 @@ function render(snaps,src){
     if(pk==='WIN'||pk==='PLA') return (r.runners||[]).map(x=>x.name);
     return Object.keys(r[pk==='QIN'?'qin':'qpl']||{}); };
   const races=realRaces(M);
-  let hh='<b>每場落飛王</b> <span class="muted">（開跑前 3h／2h／1h → 對比最新賠率，最大跌幅；四個彩池）</span>'
+  let hh='<b>每場落飛王</b> <span class="muted">（開跑前 3h／2h／1h → 對比最新賠率嘅最大跌幅；四個彩池）｜「未到」＝該基準時間仲未到 ✗</span>'
     +'<div style="overflow-x:auto;margin-top:10px"><table style="table-layout:fixed;width:100%">'
     +'<colgroup><col style="width:52px"><col style="width:58px"><col style="width:64px"><col><col><col></colgroup>'
     +'<tr><th>場次</th><th>開跑</th><th>彩池</th><th>前 3 小時</th><th>前 2 小時</th><th>前 1 小時</th></tr>';
@@ -202,7 +216,7 @@ function render(snaps,src){
       const cells=[];
       for(const mins of [180,120,60]){
         const base=near(rn,mins);
-        if(!base){cells.push('<td class="muted">—</td>');continue}
+        if(!base){cells.push('<td class="muted" style="opacity:.55">未到</td>');continue}
         let bi=null;
         for(const k of keysOf(lastS,rn,pk)){
           const a=getv(base,rn,k,pk), b2=getv(lastS,rn,k,pk);
@@ -211,12 +225,15 @@ function render(snaps,src){
           if(ch<0 && (!bi||ch<bi.ch)) bi={k,ch,a,b:b2};
         }
         cells.push(bi?`<td style="text-align:left"><b>${bi.k}</b> <span class="dn">${bi.ch.toFixed(0)}%</span> <span class="muted">(${bi.a.toFixed(1)}→${bi.b.toFixed(1)})</span></td>`
-                      :'<td class="muted">—</td>');
+                      :`<td class="muted">${base?'無跌幅':'未到'}</td>`);
       }
       hh+=`<tr><td><b>R${rn}</b></td><td class="muted">${OFFTIME[rn]||'—'}</td><td class="muted">${pn}</td>${cells.join('')}</tr>`;
     }
   }
-  hh+='</table></div><div class="muted" style="margin-top:8px;font-size:12px">註：連贏／位置Q 嘅組合名為「號-號」，只顯示當場有報價嘅組合 ✓</div>';
+  hh+='</table></div><div class="muted" style="margin-top:8px;font-size:12px">'
+    +'註① 基準 = 賽日當天、最接近「開跑前 N 小時」嘅快照（容許 ±25 分鐘）；超出範圍顯示「未到」✗<br>'
+    +'註② 對比對象 = 最新一張快照（'+((lastS.ts||'').slice(11,16))+'）✓<br>'
+    +'註③ 連贏／位置Q 組合名為「號-號」✓</div>';
   rr.innerHTML=hh;
   renderSeries();
   // 已按要求取消：走勢分組
