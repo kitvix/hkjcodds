@@ -49,8 +49,6 @@ th{color:var(--dim);font-weight:600;font-size:12.5px}
 <div id="drops" class="panel" style="display:none"></div>
 <div id="matrix" class="panel" style="display:none"></div>
 <div id="pairhorse" class="panel" style="display:none"></div>
-<div id="pairseries" class="panel" style="display:none"></div>
-<div id="pairalerts" class="panel" style="display:none"></div>
 <div id="series" class="panel" style="display:none"></div>
 
 <script>
@@ -251,8 +249,6 @@ function setRace(r){
   try{ renderSeries(); }catch(e){}
   try{ renderMatrix(); }catch(e){}
   try{ renderPairHorse(); }catch(e){}
-  try{ renderPairSeries(); }catch(e){}
-  try{ renderPairAlerts(); }catch(e){}
   try{ renderSlotTop(); }catch(e){}
 }
 function multiSnaps(){return SNAPS.filter(s=>s.runs&&Object.keys(s.runs).length)}
