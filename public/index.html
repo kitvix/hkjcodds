@@ -852,7 +852,10 @@ function renderSeries(){
   const rows=Object.keys(horses).map(k=>{
     const h=horses[k]; const idx=Object.keys(h).map(Number).sort((a,b)=>a-b);
     const first=h[idx[0]], last=h[idx[idx.length-1]];
-    return {k,nm:k.split('|')[1],h,idx,first,last,r:last/first};
+    const _nm2=k.split('|')[1];
+    const _r=(multiSnaps().find(x=>x.runs&&x.runs[SERIES.race])||{runs:{}}).runs[SERIES.race];
+    const _h=(_r&&_r.runners||[]).find(y=>y.name===_nm2);
+    return {k,no:(_h&&_h.no!=null)?String(_h.no):'—',nm:_nm2,h,idx,first,last,r:last/first};
   }).sort((a,b)=>a.r-b.r);
   const spark=(h,idx)=>{
     const vals=idx.map(i=>h[i]); const mn=Math.min(...vals),mx=Math.max(...vals);
@@ -867,7 +870,7 @@ function renderSeries(){
     ${races.map(r=>`<option value="${r}" ${r===SERIES.race?'selected':''}>第 ${r} 場</option>`).join('')}</select>`;
   let h='<b>每匹馬賠率走勢</b> '+sel+
     ` <span class="muted" style="margin-left:8px">${rows.length} 匹｜${snaps.length} 個快照（顯示 ${tsel.length} 個時間點）</span>`;
-  h+='<div style="overflow-x:auto;margin-top:10px"><table><tr><th>馬名</th><th>開盤</th>'+
+  h+='<div style="overflow-x:auto;margin-top:10px"><table><tr><th>馬號</th><th>馬名</th><th>開盤</th>'+
      tsel.slice(1,-1).map(t=>`<th>${t.slice(0,2)}:${t.slice(2)}</th>`).join('')+
      '<th>最新</th><th>變幅</th><th>實際投注額</th><th>淨流入</th><th>走勢</th></tr>';
   for(const x of rows){
@@ -876,7 +879,7 @@ function renderSeries(){
     const share1=(1/x.last)/rows.reduce((t,y)=>t+1/y.last,0);
     const amt0=POOL*0.825*share0, amt1=POOL*0.825*share1, net=amt1-amt0;
     x._net=net; x._amt=amt1;
-    h+=`<tr><td><b>${x.nm}</b></td><td>${fmt(x.first)}</td>`;
+    h+=`<tr><td><b>${x.no!=null?x.no:'—'}</b></td><td><b>${x.nm}</b></td><td>${fmt(x.first)}</td>`;
     let prev=x.first;
     for(let i=1;i<tsel.length-1;i++){
       const si=times.indexOf(tsel[i]); const v=x.h[si];
