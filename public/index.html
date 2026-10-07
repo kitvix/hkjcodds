@@ -400,11 +400,14 @@ function renderDrops(){
   box.style.display='block';
   const WIN=+BM.win||90, THR=+BM.thr||30, poolKey=BM.pool;
   // 時段清單（用 ts，含日期）
-  const seen={};
-  ms.forEach(x=>{const t=x.ts; if(!t) return; const k=t.slice(0,13);
-    if(!seen[k]) seen[k]={key:k,label:t.slice(5,10).replace('-','/')+' '+t.slice(11,13)+':00'};});
-  const slots=Object.keys(seen).sort().map(k=>seen[k]);
-  if(!BM.after) BM.after=slots[0]?slots[0].key:'';
+  const _p2=n=>String(n).padStart(2,'0');
+  const _RD=(ms[ms.length-1].ts||'2026-10-07T00:00:00').slice(0,10);
+  const _d0=new Date(_RD+'T12:00:00'); _d0.setDate(_d0.getDate()-1);
+  const _D0=_d0.getFullYear()+'-'+_p2(_d0.getMonth()+1)+'-'+_p2(_d0.getDate());
+  const slots=[];
+  for(let h=12;h<=23;h++) slots.push({key:_D0+'T'+_p2(h), label:_D0.slice(5).replace('-','/')+' '+_p2(h)+':00'});
+  for(let h=0;h<=23;h++)  slots.push({key:_RD+'T'+_p2(h), label:_RD.slice(5).replace('-','/')+' '+_p2(h)+':00'});
+  if(!BM.after) BM.after=slots[0].key;
   const allRaces=realRaces(ms);
   const races=(BM.race && allRaces.includes(BM.race))?[BM.race]:allRaces;
   const lastS=ms[ms.length-1];
@@ -460,7 +463,7 @@ function renderDrops(){
       ${sel('thr',[...Array(30)].map((_,i)=>({v:i+1,l:'≥ '+(i+1)+'%'})).concat([{v:31,l:'≥ 30% 以上'}]),BM.thr,'④ 賠率跌幅')}
       ${sel('race',[{v:'',l:'全部場次'}].concat(allRaces.map(r=>({v:r,l:'第 '+r+' 場'}))),BM.race,'⑤ 場次')}
     </div>
-    <div style="margin-top:10px;font-size:12.5px;color:#93a7c9">邏輯：由 <b>${seen[BM.after]?seen[BM.after].label:BM.after}</b> 到最新，任何 <b>${WIN} 分鐘內</b>出現 ≥ ${THR>30?'30%+':THR+'%'} 跌幅 → 全部列出 ✓（${BM.race?'第 '+BM.race+' 場':'全部場次'}）</div>`;
+    <div style="margin-top:10px;font-size:12.5px;color:#93a7c9">邏輯：由 <b>${(slots.find(x=>x.key===BM.after)||{label:BM.after}).label}</b> 到最新，任何 <b>${WIN} 分鐘內</b>出現 ≥ ${THR>30?'30%+':THR+'%'} 跌幅 → 全部列出 ✓（${BM.race?'第 '+BM.race+' 場':'全部場次'}）</div>`;
   if(!ev.length){ h+='<div class="muted" style="margin-top:10px">冇符合紀錄（可放寬跌幅或延長窗口）</div>'; box.innerHTML=h; return; }
   h+=`<div class="muted" style="margin-top:8px">符合紀錄：<b>${ev.length}</b> 條（顯示前 100 條，按跌幅排序）</div>`;
   h+='<div style="overflow-x:auto;margin-top:8px"><table style="table-layout:fixed;width:100%">'
@@ -486,10 +489,10 @@ function renderMatrix(){
   const races=realRaces(ms);
   if(!SERIES.race||!races.includes(SERIES.race)) SERIES.race=races[0];
   const r=ms[ms.length-1].runs[SERIES.race];
-  const nums=(r.runners||[]).map(x=>+x.no).sort((a,b)=>a-b);
+  const nums=(((r&&r.runners)||[])||[]).map(x=>+x.no).sort((a,b)=>a-b);
   const sel=`<select onchange="setRace(this.value)" style="background:#0e1830;color:#e8eefc;border:1px solid #243453;border-radius:8px;padding:6px 10px">
     ${races.map(x=>`<option value="${x}" ${x===SERIES.race?'selected':''}>第 ${x} 場</option>`).join('')}</select>`;
-  const nmap={}; (r.runners||[]).forEach(x=>nmap[+x.no]=x.name);
+  const nmap={}; (((r&&r.runners)||[])||[]).forEach(x=>nmap[+x.no]=x.name);
   const n=nums.length, half=Math.floor(n/2);   // 馬會做法：左右各顯示一半
   const mk=(title,data)=>{
     const vals=Object.values(data).filter(v=>v>1.5);
