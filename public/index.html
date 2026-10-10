@@ -198,7 +198,8 @@ function render(snaps,src){
   const toMin2=h=>Math.floor(+h/100)*60+(+h%100);
   const lastS=M[M.length-1];
   // 賽日（用最後快照嘅日期）
-  const RACEDATE=(lastS.ts||'').slice(0,10);
+  const _dc2={}; M.forEach(x=>{const d=(x.ts||'').slice(0,10); if(d) _dc2[d]=(_dc2[d]||0)+1;});
+  const RACEDATE=Object.keys(_dc2).sort((a,b)=>_dc2[b]-_dc2[a])[0] || (lastS.ts||'').slice(0,10);
   const offStamp=rn=>{const t=OFFTIME[rn]; return t?RACEDATE+'T'+t:null};   // YYYY-MM-DDTHH:MM
   const addMin=(stamp,mins)=>{ // 'YYYY-MM-DDTHH:MM' 加減分鐘
     const d=new Date(stamp.replace(' ','T')+':00'); d.setMinutes(d.getMinutes()+mins);
