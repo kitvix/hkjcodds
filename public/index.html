@@ -201,7 +201,12 @@ function render(snaps,src){
     const p2=n=>String(n).padStart(2,'0');
     return d.getFullYear()+'-'+p2(d.getMonth()+1)+'-'+p2(d.getDate())+'T'+p2(d.getHours())+':'+p2(d.getMinutes());
   };
-  const minutesApart=(a,b)=>Math.abs((new Date(a.replace(' ','T')+':00'))-(new Date(b.replace(' ','T')+':00')))/60000;
+  // 穩健時間解析：支援 '2026-10-07T15:35:00' / '2026-10-07T15:35' / '2026-10-07 15:35'
+  const _ts2ms=v=>{ let t=String(v).trim().replace(' ','T');
+    if(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(t)) t+=':00';
+    const d=new Date(t); return isNaN(d.getTime())?NaN:d.getTime(); };
+  const minutesApart=(a,b)=>{ const x=_ts2ms(a), y=_ts2ms(b);
+    return (isNaN(x)||isNaN(y))?1e9:Math.abs(x-y)/60000; };
   const near=(rn,mins)=>{ // 最接近（開跑 − mins）而且係同一日、已過去嘅快照（容許 ±25 分鐘）
     const off=offStamp(rn); if(!off) return null;
     const tgt=addMin(off,-mins);
