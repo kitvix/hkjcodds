@@ -95,16 +95,11 @@ async function loadRemote(){
           const okRec=parsed.filter(r=>r && (r.odds || r.runs));
           valid = okRec.length>=5;
           if(!valid){ tried.push(x.l+'：回應唔似快照資料（略過）'); continue; }
+          // 第一個成功就用（raw 優先 ✓）—— 避免「污染版本時間戳更新」搶先 ✗
           const lastTs=okRec[okRec.length-1].ts||'';
-          const prev=window.__bestTs||'';
-          if(lastTs>prev){ window.__bestParsed=parsed; window.__bestSrc=x.l+' · '+repo+'/'+path; window.__bestTs=lastTs; }
-          const ageMin=(Date.now()-new Date(lastTs).getTime())/60000;
-          tried.push(x.l+'：'+okRec.length+' 張｜最新 '+(lastTs.slice(11,16)||'?')+'（'+Math.round(ageMin)+' 分鐘前）');
-          if(ageMin<12){ // 夠新鮮 → 唔需要再試其他來源 ✓
-            render(parsed, x.l+' · '+repo+'/'+path);
-            return;
-          }
-          continue;   // 唔夠新鮮 → 試下一個來源 ✓
+          tried.push(x.l+'：'+okRec.length+' 張｜最新 '+(lastTs.slice(11,16)||'?'));
+          render(parsed, x.l+' · '+repo+'/'+path);
+          return;
         }
         if(false){
           const parsed2=parsed;
