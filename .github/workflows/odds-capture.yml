@@ -14,8 +14,8 @@ jobs:
     timeout-minutes: 9
     env:
       RACE_DATE: 'auto'         # 獨贏/貼士：自動偵測賽日
-      RACE_DATE_ISO: '2026-10-07'  # 多彩池（Chrome）：賽日 YYYY-MM-DD
-      VENUE: 'HV'
+      RACE_DATE_ISO: '2026-10-11'  # 多彩池（Chrome）：賽日 YYYY-MM-DD
+      VENUE: 'ST'
       RACES: '11'
     steps:
       - uses: actions/checkout@v4
