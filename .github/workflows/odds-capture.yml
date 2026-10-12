@@ -1,7 +1,7 @@
 name: HKJC 賠率快照
 on:
   schedule:
-    - cron: '*/5 * * * *'      # 每 5 分鐘
+    - cron: '*/5 * * * *'
   workflow_dispatch:
 permissions:
   contents: write
@@ -13,8 +13,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 9
     env:
-      RACE_DATE: 'auto'         # 獨贏/貼士：自動偵測賽日
-      RACE_DATE_ISO: '2026-10-11'  # 多彩池（Chrome）：賽日 YYYY-MM-DD
+      RACE_DATE: 'auto'
+      RACE_DATE_ISO: '2026-10-11'
       VENUE: 'ST'
       RACES: '11'
     steps:
@@ -23,8 +23,7 @@ jobs:
       - uses: actions/setup-python@v5
         with: { python-version: '3.11' }
       - name: 確認 Chrome
-        run: |
-          google-chrome --version || chromium --version || echo "⚠️ 冇 Chrome（多彩池會跳過）"
+        run: google-chrome --version || chromium --version || echo "no chrome"
       - name: 抓取獨贏賠率 + 貼士指數
         run: |
           if [ "$RACE_DATE" = "auto" ]; then
@@ -32,38 +31,28 @@ jobs:
           else
             python3 scripts/cloud_snapshot.py "$RACE_DATE" "$VENUE" "$RACES" || true
           fi
-      - name: 抓取多彩池（獨贏/位置/連贏/位置Q）
-
-      run: |
-
-        TODAY=$(TZ=Asia/Hong_Kong date +%Y-%m-%d)
-
-        PREV=$(TZ=Asia/Hong_Kong date -d 'yesterday' +%Y-%m-%d 2>/dev/null || TZ=Asia/Hong_Kong date -v-1d +%Y-%m-%d)
-
-        ISO='2026-10-11'
-
-        if [ "$TODAY" = "$ISO" ] || [ "$TODAY" = "$PREV" ]; then
-
-          python3 scripts/scrape_odds_cdp.py "$RACE_DATE_ISO" "$VENUE" "$RACES" || true
-
-        else
-
-          echo "⏭ 跳過多彩池（今日 $TODAY 唔係賽日 $ISO 或前一日 $PREV）"
-
-        fi
-
+      - name: 抓取多彩池（只在賽日或前一日執行）
+        run: |
+          TODAY=$(TZ=Asia/Hong_Kong date +%Y-%m-%d)
+          PREV=$(TZ=Asia/Hong_Kong date -d 'yesterday' +%Y-%m-%d)
+          ISO="$RACE_DATE_ISO"
+          if [ "$TODAY" = "$ISO" ] || [ "$TODAY" = "$PREV" ]; then
+            python3 scripts/scrape_odds_cdp.py "$RACE_DATE_ISO" "$VENUE" "$RACES" || true
+          else
+            echo "skip multi-pool: today=$TODAY raceday=$ISO prev=$PREV"
+          fi
       - name: 提交快照
         run: |
-            mkdir -p data/odds_snapshots
-            git config user.name  "odds-bot"
-            git config user.email "odds-bot@users.noreply.github.com"
-            git add -A data/odds_snapshots || true
-            if git diff --staged --quiet; then
-              echo "無新快照"
-            else
-              git commit -m "odds $(date -u +'%Y-%m-%dT%H:%MZ')"
-              for i in 1 2 3; do
-                git pull --rebase --autostash origin main && git push && break
-                echo "push 失敗，第 $i 次重試"; sleep 5
-              done
-            fi
+          mkdir -p data/odds_snapshots
+          git config user.name "odds-bot"
+          git config user.email "odds-bot@users.noreply.github.com"
+          git add -A data/odds_snapshots || true
+          if git diff --staged --quiet; then
+            echo "no new snapshot"
+          else
+            git commit -m "odds $(date -u +'%Y-%m-%dT%H:%MZ')"
+            for i in 1 2 3; do
+              git pull --rebase --autostash origin main && git push && break
+              echo "push retry $i"; sleep 5
+            done
+          fi
