@@ -14,9 +14,9 @@ jobs:
     timeout-minutes: 9
     env:
       RACE_DATE: 'auto'
-      RACE_DATE_ISO: '2026-10-11'
-      VENUE: 'ST'
-      RACES: '11'
+      RACE_DATE_ISO: '2026-10-14'
+      VENUE: 'HV'
+      RACES: '9'
     steps:
       - uses: actions/checkout@v4
         with: { fetch-depth: 1 }
